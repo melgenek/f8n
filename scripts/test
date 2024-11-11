@@ -1,0 +1,46 @@
+#!/bin/bash
+set -e
+
+cd $(dirname $0)/..
+
+. ./scripts/test-helpers
+
+# ---
+
+docker ps
+
+# ---
+
+# Selectively run tests
+if [ -n "$1" ]; then
+    . ./scripts/test-run-"$1"
+    echo "Did test-run-$1 $?"
+    exit 0
+fi
+
+
+. ./scripts/test-run-sqlite
+echo "Did test-run-sqlite $?"
+
+. ./scripts/test-run-mysql
+echo "Did test-run-mysql $?"
+
+. ./scripts/test-run-postgres
+echo "Did test-run-postgres $?"
+
+. ./scripts/test-run-cockroachdb
+echo "Did test-run-cockroachdb $?"
+
+. ./scripts/test-run-schema-migration
+echo "Did test-run-schema-migration $?"
+
+. ./scripts/test-run-nats
+echo "did test-nats $?"
+
+. ./scripts/test-run-nats-embedded
+echo "did test-nats-embedded $?"
+
+. ./scripts/test-run-nats-socket
+echo "did test-nats-socket $?"
+
+exit 0
