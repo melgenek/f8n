@@ -119,6 +119,7 @@ func (l *LogStructured) Create(ctx context.Context, key string, value []byte, le
 	}
 	if prevEvent != nil {
 		if !prevEvent.Delete {
+			logrus.Tracef("ERR_KEY_EXISTS %s, prevEvent=%+v", key, prevEvent)
 			return 0, server.ErrKeyExists
 		}
 		createEvent.PrevKV = prevEvent.KV
@@ -172,7 +173,7 @@ func (l *LogStructured) Delete(ctx context.Context, key string, revision int64) 
 
 func (l *LogStructured) List(ctx context.Context, prefix, startKey string, limit, revision int64) (revRet int64, kvRet []*server.KeyValue, errRet error) {
 	defer func() {
-		logrus.Tracef("LIST %s, start=%s, limit=%d, rev=%d => rev=%d, kvs=%d, err=%v", prefix, startKey, limit, revision, revRet, len(kvRet), errRet)
+		logrus.Tracef("LIST %s, start=%s, limit=%d, rev=%d => rev=%d, kvs=%v, err=%v", prefix, startKey, limit, revision, revRet, kvRet, errRet)
 	}()
 
 	rev, events, err := l.log.List(ctx, prefix, startKey, limit, revision, false)

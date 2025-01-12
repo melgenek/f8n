@@ -4,7 +4,7 @@ cd $(dirname $0)/..
 
 # sig-api-machinery e2e tests take about 20 minutes to complete.
 # Only run conformance on sqlite and nats, to reduce CI run time.
-if [[ "$LABEL" != "sqlite" ]]; then #--DISABLED UNTIL NATS PASSES TESTS--# && [[ "$LABEL" != "nats-embedded" ]]; then
+if [[ "$LABEL" != "sqlite" ]] && [[ "$LABEL" != "nats-embedded" ]] && [[ "$LABEL" != "fdb" ]]; then
   echo "Skipping conformance"
   exit
 fi
@@ -22,7 +22,7 @@ test-conformance() {
         --rm -d --name $name \
         --entrypoint /usr/bin/sh \
         -e "KUBECONFIG=/root/.kube/config" \
-        -e "E2E_FOCUS=sig-api-machinery" \
+        -e "E2E_FOCUS=should\snot\sbe\sblocked\sby\sdependency\scircle" \
         -e "E2E_SKIP=StorageVersionAPI|Slow|Flaky" \
         -e "E2E_EXTRA_ARGS=--ginkgo.fail-fast" \
         registry.k8s.io/conformance:$version \

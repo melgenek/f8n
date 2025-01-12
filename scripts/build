@@ -13,7 +13,7 @@ if [ ${ARCH} = armv7l ] || [ ${ARCH} = arm ]; then
 fi
 
 if [ "$(uname)" = "Linux" ]; then
-    OTHER_LINKFLAGS="-extldflags -static -s"
+    OTHER_LINKFLAGS="-extldflags -dynamic -s"
 fi
 LINKFLAGS="-X github.com/k3s-io/kine/pkg/version.Version=$VERSION"
 LINKFLAGS="-X github.com/k3s-io/kine/pkg/version.GitCommit=$COMMIT $LINKFLAGS"

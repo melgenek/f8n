@@ -152,9 +152,9 @@ func (w *watcher) Start(ctx context.Context, r *etcdserverpb.WatchCreateRequest)
 			if len(events) > 0 {
 				revision = events[len(events)-1].KV.ModRevision
 				if trace {
-					for _, event := range events {
-						logrus.Tracef("WATCH READ id=%d, key=%s, revision=%d", id, event.KV.Key, event.KV.ModRevision)
-					}
+					//for _, event := range events {
+					//logrus.Tracef("WATCH READ id=%d, key=%s, revision=%d", id, event.KV.Key, event.KV.ModRevision)
+					//}
 				}
 			}
 
@@ -165,7 +165,7 @@ func (w *watcher) Start(ctx context.Context, r *etcdserverpb.WatchCreateRequest)
 					WatchId: id,
 					Events:  toEvents(events...),
 				}
-				logrus.Tracef("WATCH SEND id=%d, key=%s, revision=%d, events=%d, size=%d, reads=%d", id, key, revision, len(wr.Events), wr.Size(), reads)
+				//logrus.Tracef("WATCH SEND id=%d, key=%s, revision=%d, events=%d, size=%d, reads=%d", id, key, revision, len(wr.Events), wr.Size(), reads)
 				if err := w.server.Send(wr); err != nil {
 					w.Cancel(id, 0, 0, err)
 				}
@@ -278,7 +278,7 @@ func (w *watcher) Progress(ctx context.Context) {
 
 // ProgressIfSynced sends a progress report on any channels that are synced and blocked on the outer loop
 func (w *watcher) ProgressIfSynced(ctx context.Context) (bool, error) {
-	logrus.Tracef("WATCH PROGRESS TICK")
+	//logrus.Tracef("WATCH PROGRESS TICK")
 	revision, err := w.backend.CurrentRevision(ctx)
 	if err != nil {
 		logrus.Errorf("Failed to get current revision for ProgressNotify: %v", err)

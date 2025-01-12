@@ -1,0 +1,14 @@
+version: '3'
+services:
+  fdb:
+    image: foundationdb/foundationdb:7.3.57
+    ports:
+      - 4550:4550/tcp
+    environment:
+      PUBLIC_IP: 0.0.0.0
+      FDB_PROCESS_CLASS: unset
+      FDB_NETWORKING_MODE: host
+      FDB_COORDINATOR_PORT: 4550
+      FDB_PORT: 4550
+
+# /usr/bin/fdbserver --listen-address 0.0.0.0:"4550" --public-address "0.0.0.0:4550" --datadir /var/fdb/data --logdir /var/fdb/logs --locality-zoneid="$(hostname)" --locality-machineid="$(hostname)"

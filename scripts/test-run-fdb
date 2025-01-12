@@ -1,0 +1,24 @@
+#!/bin/bash
+start-test() {
+    KINE_IMAGE=$IMAGE KINE_ENDPOINT="fdb://VufDkgAW:O2dFQHXk@host.lima.internal:4689" provision-kine
+    local kine_url=$(cat $TEST_DIR/kine/*/metadata/url)
+    K3S_DATASTORE_ENDPOINT=$kine_url provision-cluster
+}
+export -f start-test
+
+LABEL=fdb run-test
+
+
+start-fdb() {
+      docker container run \
+          -d --name "local-fdb" \
+          -e PUBLIC_IP="0.0.0.0" \
+          -e FDB_PROCESS_CLASS="unset" \
+          -e FDB_NETWORKING_MODE="container" \
+          -e FDB_COORDINATOR_PORT=4550 \
+          -e FDB_PORT=4550 \
+          foundationdb/foundationdb:7.3.57
+
+      docker exec local-fdb fdbcli --exec "configure new single memory"
+      docker container inspect --format '{{.NetworkSettings.IPAddress}}' local-fdb
+}

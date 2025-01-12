@@ -24,3 +24,9 @@ REPO=${REPO:-rancher}
 if echo $TAG | grep -q dirty; then
     TAG=dev
 fi
+
+echo COMMIT $COMMIT
+echo GIT_TAG $GIT_TAG
+echo TAG $TAG
+echo REPO $REPO
+echo VERSION $VERSION

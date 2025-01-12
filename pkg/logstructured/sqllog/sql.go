@@ -3,6 +3,7 @@ package sqllog
 import (
 	"context"
 	"database/sql"
+	"github.com/k3s-io/kine/pkg/logstructured"
 	"strings"
 	"time"
 
@@ -19,6 +20,11 @@ const (
 	compactMinRetain = 1000
 	compactBatchSize = 1000
 	pollBatchSize    = 500
+)
+
+var (
+	// Ensure Backend implements server.Backend.
+	_ logstructured.Log = (&SQLLog{})
 )
 
 type SQLLog struct {
@@ -311,6 +317,9 @@ func (s *SQLLog) List(ctx context.Context, prefix, startKey string, limit, revis
 
 	// It's assumed that when there is a start key that that key exists.
 	if strings.HasSuffix(prefix, "/") {
+		if !strings.HasPrefix(prefix, startKey) {
+			logrus.Errorf("LIST START IS NOT IN PREFIX prefix=%s, startKey=%s", prefix, startKey)
+		}
 		// In the situation of a list start the startKey will not exist so set to ""
 		if prefix == startKey {
 			startKey = ""

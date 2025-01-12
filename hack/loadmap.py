@@ -22,7 +22,7 @@ def main(rounds, *args, **kwargs):
     try:
         config.load_kube_config()
         version = client.VersionApi().get_code()
-        logging.info(f"Connected to {Configuration._default.host} - {version.git_version}")
+        logging.info(f"Connected to {Configuration._default.host} - {version.git_version}. Rounds: {rounds}")
     except Exception as e:
         logging.error(f"Kubernetes version check failed: {e}")
         sys.exit(1)
@@ -40,7 +40,8 @@ def main(rounds, *args, **kwargs):
         else:
             raise e
 
-    for _ in range(rounds):
+    for round in range(rounds):
+        logging.info(f"Running round #{round}")
         i = random.randint(0, 9)
         if i in [0, 1]:
             create_configmap()

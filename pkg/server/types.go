@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
-
+	"fmt"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -74,11 +74,19 @@ type KeyValue struct {
 	Lease          int64
 }
 
+func (e *KeyValue) String() string {
+	return fmt.Sprintf("KeyValue{Key: %s, CreateRevision: %d, ModRevision: %d, Value: %s, Lease: %d}", e.Key, e.CreateRevision, e.ModRevision, e.Value, e.Lease)
+}
+
 type Event struct {
 	Delete bool
 	Create bool
 	KV     *KeyValue
 	PrevKV *KeyValue
+}
+
+func (e *Event) String() string {
+	return fmt.Sprintf("Event{Delete: %v, Create: %v, KV: %v, PrevKV: %v}", e.Delete, e.Create, e.KV, e.PrevKV)
 }
 
 type WatchResult struct {
