@@ -9,14 +9,24 @@ import (
 	"time"
 )
 
-// All TTL is purely copy-pasted from the logstructured.go
+// All TTL is copy-pasted from the logstructured.go
 
-func (l *FDB) ttl(ctx context.Context) {
+const (
+	retryInterval = 250 * time.Millisecond
+)
+
+type ttlEventKV struct {
+	key         string
+	modRevision int64
+	expiredAt   time.Time
+}
+
+func (f *FDB) ttl(ctx context.Context) {
 	queue := workqueue.NewDelayingQueue()
 	rwMutex := &sync.RWMutex{}
 	ttlEventKVMap := make(map[string]*ttlEventKV)
 	go func() {
-		for l.handleTTLEvents(ctx, rwMutex, queue, ttlEventKVMap) {
+		for f.handleTTLEvents(ctx, rwMutex, queue, ttlEventKVMap) {
 		}
 	}()
 
@@ -28,7 +38,7 @@ func (l *FDB) ttl(ctx context.Context) {
 		default:
 		}
 
-		for event := range l.ttlEvents(ctx) {
+		for event := range f.ttlEvents(ctx) {
 			if event.Delete {
 				continue
 			}
@@ -49,7 +59,7 @@ func (l *FDB) ttl(ctx context.Context) {
 	}
 }
 
-func (l *FDB) handleTTLEvents(ctx context.Context, rwMutex *sync.RWMutex, queue workqueue.DelayingInterface, store map[string]*ttlEventKV) bool {
+func (f *FDB) handleTTLEvents(ctx context.Context, rwMutex *sync.RWMutex, queue workqueue.DelayingInterface, store map[string]*ttlEventKV) bool {
 	key, shutdown := queue.Get()
 	if shutdown {
 		logrus.Info("TTL events work queue has shut down")
@@ -69,13 +79,13 @@ func (l *FDB) handleTTLEvents(ctx context.Context, rwMutex *sync.RWMutex, queue 
 		return true
 	}
 
-	l.deleteTTLEvent(ctx, rwMutex, queue, store, eventKV)
+	f.deleteTTLEvent(ctx, rwMutex, queue, store, eventKV)
 	return true
 }
 
-func (l *FDB) deleteTTLEvent(ctx context.Context, rwMutex *sync.RWMutex, queue workqueue.DelayingInterface, store map[string]*ttlEventKV, preEventKV *ttlEventKV) {
+func (f *FDB) deleteTTLEvent(ctx context.Context, rwMutex *sync.RWMutex, queue workqueue.DelayingInterface, store map[string]*ttlEventKV, preEventKV *ttlEventKV) {
 	logrus.Tracef("TTL delete key=%v, modRev=%v", preEventKV.key, preEventKV.modRevision)
-	_, _, _, err := l.Delete(ctx, preEventKV.key, preEventKV.modRevision)
+	_, _, _, err := f.Delete(ctx, preEventKV.key, preEventKV.modRevision)
 
 	rwMutex.Lock()
 	defer rwMutex.Unlock()
@@ -98,13 +108,13 @@ func (l *FDB) deleteTTLEvent(ctx context.Context, rwMutex *sync.RWMutex, queue w
 // all non-deleted keys with a page size of 1000, then it starts watching at the
 // revision returned by the initial list. Any keys that have a Lease associated with
 // them are sent into the result channel for deferred handling of TTL expiration.
-func (l *FDB) ttlEvents(ctx context.Context) chan *server.Event {
+func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 	result := make(chan *server.Event)
 
 	go func() {
 		defer close(result)
 
-		rev, events, err := l.list(nil, "/", "", 1000, 0, false)
+		rev, events, err := f.list(nil, "/", "", 1000, 0, false)
 		for len(events) > 0 {
 			if err != nil {
 				logrus.Errorf("TTL event list failed: %v", err)
@@ -117,10 +127,10 @@ func (l *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 				}
 			}
 
-			_, events, err = l.list(nil, "/", events[len(events)-1].KV.Key, 1000, rev, false)
+			_, events, err = f.list(nil, "/", events[len(events)-1].KV.Key, 1000, rev, false)
 		}
 
-		wr := l.Watch(ctx, "/", rev)
+		wr := f.Watch(ctx, "/", rev)
 		if wr.CompactRevision != 0 {
 			logrus.Errorf("TTL event watch failed: %v", server.ErrCompacted)
 			return

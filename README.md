@@ -1,55 +1,65 @@
-# Kine (Kine is not etcd)
-==========================
+# Kine FoundationDB backend
 
-Kine is an etcdshim that translates etcd API to:
-- SQLite
-- Postgres
-- MySQL/MariaDB
-- NATS
+This is a Kine fork that uses FoundationDB to mimic ETCD API.
+The implementation currently passes all `sig-api-machinery` tests for `v1.29.4` excluding `StorageVersionAPI|Slow|Flaky`.
 
-## Features
-- Can be ran standalone so any k8s (not just K3s) can use Kine
-- Implements a subset of etcdAPI (not usable at all for general purpose etcd)
-- Translates etcdTX calls into the desired API (Create, Update, Delete)
+## Running demo
+0. Install FDB https://apple.github.io/foundationdb/getting-started-mac.html
+0. Get the FDB connection string
+```
+cat /usr/local/etc/foundationdb/fdb.cluster
+```
+1. Run Kine
+```
+go run main.go  --endpoint=fdb://VufDkgAW:O2dFQHXk@127.0.0.1:4689
+```
 
-See an [example](/examples/minimal.md).
+2. Run K3s backed by Kine
+```
+docker container run \
+    --rm --name k3s \
+    --network host \
+    --privileged \
+    -e K3S_DEBUG=true \
+    -e K3S_DATASTORE_ENDPOINT=http://127.0.0.1:2379 \
+    docker.io/rancher/k3s:v1.29.4-k3s1 server \
+    --kube-apiserver-arg=feature-gates=WatchList=true \
+    --disable=coredns,servicelb,traefik,local-storage,metrics-server \
+    --disable-network-policy
+```
 
-## Developer Documentation
+3. Run kubectl
+```
+$ docker exec k3s kubectl get nodes -A
+NAME          STATUS   ROLES                  AGE   VERSION
+lima-docker   Ready    control-plane,master   86s   v1.29.4+k3s1
+```
 
-A high level flow diagram and overview of code structure is available at [docs/flow.md](/docs/flow.md).
+## Implementation
 
+The implementation is in the `pkg/drivers/fdb` directory.
 
-./scripts/build
+## TODO
 
-docker-compose up -d
-docker exec kine_fdb_1 fdbcli --exec "configure new single memory"
-
---endpoint=fdb://127.0.0.1
-
-
-
-    docker container run \
-        --rm --name k3s \
-        --network host \
-        --privileged \
-        -e K3S_DEBUG=true \
-        -e K3S_DATASTORE_ENDPOINT=http://127.0.0.1:2379 \
-        docker.io/rancher/k3s:v1.29.4-k3s1 server \
-        --kube-apiserver-arg=feature-gates=WatchList=true \
-        --disable=coredns,servicelb,traefik,local-storage,metrics-server \
-        --disable-network-policy
+Here is a list of implementation details that need to be completed before starting scale testing of this implementation.
+- [ ] Use FDB Versionstamps for ETCD revision generation https://apple.github.io/foundationdb/data-modeling.html#versionstamps
+- [ ] Current write amplification is x4. Reduce it to x2 by querying the previous value instead of storing it in the record.
+- [ ] Value size is limited to 100KiB. Extend the size to 10MiB (transaction size limit) https://apple.github.io/foundationdb/largeval.html
+- [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
+- [ ] Implement compaction
 
 
 
+## Useful readings
 
-docker build \
-    --label "org.foundationdb.version=7.3.56" \
-    --label "org.foundationdb.build_date=$(date +"%Y-%m-%dT%H:%M:%S%z")" \
-    --label "org.foundationdb.commit=abcdef" \
-    --progress plain \
-    --build-arg FDB_VERSION="7.3.56" \
-    --build-arg FDB_LIBRARY_VERSIONS="7.3.56" \
-    --build-arg FDB_WEBSITE="https://hello.world" \
-    --tag "fdb-local" \
-    --file Dockerfile \
-    --target "foundationdb" .
+- https://www.alibabacloud.com/blog/getting-started-with-kubernetes-%7C-etcd_596292
+- https://forums.foundationdb.org/t/a-foundationdb-layer-for-apiserver-as-an-alternative-to-etcd/2697/3
+- https://forums.foundationdb.org/t/what-is-the-most-efficient-way-to-generate-version-stamps-in-fdb/2062
+- https://forums.foundationdb.org/t/possible-to-create-a-unique-increasing-8-byte-sequence-with-versionstamps/1640/4
+- https://static.sched.com/hosted_files/foundationdbsummit2019/86/zookeeper_layer.pdf
+- https://www.youtube.com/watch?v=2HiIgbxtx0c&ab_channel=TheLinuxFoundation
+- https://etcd.io/docs/v3.6/learning/data_model/
+- https://github.com/apple/foundationdb/wiki/Difference-between-Tuple.range()-and-Range.startsWith()
+- https://forums.foundationdb.org/t/what-is-the-most-efficient-way-to-generate-version-stamps-in-fdb/2062
+- https://forums.foundationdb.org/t/versionstamp-vs-committedversion/600/4
+- https://forums.foundationdb.org/t/versionstamp-performance/705
