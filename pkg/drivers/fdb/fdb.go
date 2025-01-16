@@ -11,30 +11,20 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/broadcaster"
 	"github.com/k3s-io/kine/pkg/drivers"
-	"github.com/k3s-io/kine/pkg/logstructured"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
-	"k8s.io/client-go/util/workqueue"
 	"math"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 )
 
 var (
-	// Ensure Backend implements server.Backend.
-	// _ logstructured.Log = (&FdbStructured{})
-	_ server.Backend = (&FdbStructured{})
+	_ server.Backend = (&FDB{})
 )
 
 const (
 	retryInterval = 250 * time.Millisecond
 )
-
-type Fdb struct {
-	logstructured.LogStructured
-}
 
 func New(ctx context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
 	return false, NewFdbStructured(cfg.DataSourceName), nil
@@ -50,7 +40,7 @@ type ttlEventKV struct {
 	expiredAt   time.Time
 }
 
-type FdbStructured struct {
+type FDB struct {
 	connectionString   string
 	db                 fdb.Database
 	kine               directory.DirectorySubspace
@@ -64,15 +54,14 @@ type FdbStructured struct {
 	currentRev  int64
 }
 
-func NewFdbStructured(connectionString string) *FdbStructured {
-	return &FdbStructured{
+func NewFdbStructured(connectionString string) *FDB {
+	return &FDB{
 		connectionString: connectionString,
 		notify:           make(chan int64, 1024),
 	}
 }
 
-func (f *FdbStructured) Start(ctx context.Context) error {
-	//logrus.Tracef("Starting")
+func (f *FDB) Start(ctx context.Context) error {
 	f.ctx = ctx
 	fdb.MustAPIVersion(730)
 
@@ -89,22 +78,11 @@ func (f *FdbStructured) Start(ctx context.Context) error {
 	}
 	f.kine = kine
 
+	// todo don't clear on startup
 	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
 		tr.ClearRange(kine)
 		return
 	})
-
-	//var tr fdb.Transaction
-	//_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-	//	key := fdb.Key("firstVersionstamp")
-	//	value := tr.Get(key).MustGet()
-	//	if value == nil {
-	//		versionstamp := tuple.IncompleteVersionstamp(0)
-	//		tr.SetVersionstampedValue(key, versionstamp)
-	//	}
-	//
-	//	return tr.GetVersionstamp(), nil
-	//})
 
 	if err != nil {
 		return err
@@ -113,8 +91,6 @@ func (f *FdbStructured) Start(ctx context.Context) error {
 	f.byRevision = kine.Sub("byRevision")
 	f.byKeysAndRevisions = kine.Sub("byKeysAndRevisions")
 	f.sequence = kine.Sub("sequence")
-
-	//logrus.Tracef("Started")
 
 	// See https://github.com/kubernetes/kubernetes/blob/442a69c3bdf6fe8e525b05887e57d89db1e2f3a5/staging/src/k8s.io/apiserver/pkg/storage/storagebackend/factory/etcd3.go#L97
 	if _, err := f.Create(ctx, "/registry/health", []byte(`{"health":"true"}`), 0); err != nil {
@@ -127,21 +103,21 @@ func (f *FdbStructured) Start(ctx context.Context) error {
 	return nil
 }
 
-func (l *FdbStructured) Get(ctx context.Context, key, rangeEnd string, limit, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
+func (l *FDB) Get(ctx context.Context, key, rangeEnd string, limit, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
 	defer func() {
 		l.adjustRevision(ctx, &revRet)
 		logrus.Tracef("GET %s, rev=%d => rev=%d, kv=%v, err=%v", key, revision, revRet, kvRet != nil, errRet)
 	}()
 
-	rev, event, err := l.get(ctx, nil, key, rangeEnd, limit, revision, false)
+	rev, event, err := l.get(nil, key, rangeEnd, limit, revision, false)
 	if event == nil {
 		return rev, nil, err
 	}
 	return rev, event.KV, err
 }
 
-func (l *FdbStructured) get(ctx context.Context, tr *fdb.Transaction, key, rangeEnd string, limit, revision int64, includeDeletes bool) (int64, *server.Event, error) {
-	rev, events, err := l.InnerList(ctx, tr, key, rangeEnd, limit, revision, includeDeletes)
+func (l *FDB) get(tr *fdb.Transaction, key, rangeEnd string, limit, revision int64, includeDeletes bool) (int64, *server.Event, error) {
+	rev, events, err := l.list(tr, key, rangeEnd, limit, revision, includeDeletes)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -154,7 +130,7 @@ func (l *FdbStructured) get(ctx context.Context, tr *fdb.Transaction, key, range
 	return rev, events[0], nil
 }
 
-func (l *FdbStructured) adjustRevision(ctx context.Context, rev *int64) {
+func (l *FDB) adjustRevision(ctx context.Context, rev *int64) {
 	if *rev != 0 {
 		return
 	}
@@ -164,14 +140,14 @@ func (l *FdbStructured) adjustRevision(ctx context.Context, rev *int64) {
 	}
 }
 
-func (l *FdbStructured) Create(ctx context.Context, key string, value []byte, lease int64) (revRet int64, errRet error) {
+func (l *FDB) Create(ctx context.Context, key string, value []byte, lease int64) (revRet int64, errRet error) {
 	defer func() {
 		l.adjustRevision(ctx, &revRet)
 		logrus.Tracef("CREATE %s, size=%d, lease=%d => rev=%d, err=%v", key, len(value), lease, revRet, errRet)
 	}()
 
 	rev, err := l.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-		rev, prevEvent, err := l.get(ctx, &tr, key, "", 1, 0, true)
+		rev, prevEvent, err := l.get(&tr, key, "", 1, 0, true)
 		if err != nil {
 			return int64(0), err
 		}
@@ -194,12 +170,12 @@ func (l *FdbStructured) Create(ctx context.Context, key string, value []byte, le
 			createEvent.PrevKV = prevEvent.KV
 		}
 
-		return l.Append(ctx, &tr, createEvent)
+		return l.append(ctx, &tr, createEvent)
 	})
 	return rev.(int64), err
 }
 
-func (l *FdbStructured) Delete(ctx context.Context, key string, revision int64) (revRet int64, kvRet *server.KeyValue, deletedRet bool, errRet error) {
+func (l *FDB) Delete(ctx context.Context, key string, revision int64) (revRet int64, kvRet *server.KeyValue, deletedRet bool, errRet error) {
 	defer func() {
 		l.adjustRevision(ctx, &revRet)
 		logrus.Tracef("DELETE %s, rev=%d => rev=%d, kv=%v, deleted=%v, err=%v", key, revision, revRet, kvRet != nil, deletedRet, errRet)
@@ -213,7 +189,7 @@ func (l *FdbStructured) Delete(ctx context.Context, key string, revision int64) 
 	}
 
 	res, _ := l.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-		rev, event, err := l.get(ctx, &tr, key, "", 1, 0, true)
+		rev, event, err := l.get(&tr, key, "", 1, 0, true)
 		if err != nil {
 			return &Result{0, nil, false, err}, nil
 		}
@@ -236,7 +212,7 @@ func (l *FdbStructured) Delete(ctx context.Context, key string, revision int64) 
 			PrevKV: event.KV,
 		}
 
-		rev, err = l.Append(ctx, &tr, deleteEvent)
+		rev, err = l.append(ctx, &tr, deleteEvent)
 		if err != nil {
 			return &Result{0, nil, false, err}, nil
 		}
@@ -248,12 +224,12 @@ func (l *FdbStructured) Delete(ctx context.Context, key string, revision int64) 
 	return castedRes.revRet, castedRes.kvRet, castedRes.deletedRet, castedRes.errRet
 }
 
-func (l *FdbStructured) List(ctx context.Context, prefix, startKey string, limit, revision int64) (revRet int64, kvRet []*server.KeyValue, errRet error) {
+func (l *FDB) List(ctx context.Context, prefix, startKey string, limit, revision int64) (revRet int64, kvRet []*server.KeyValue, errRet error) {
 	defer func() {
 		logrus.Tracef("LIST %s, start=%s, limit=%d, rev=%d => rev=%d, kvs=%v, err=%v", prefix, startKey, limit, revision, revRet, kvRet, errRet)
 	}()
 
-	rev, events, err := l.InnerList(ctx, nil, prefix, startKey, limit, revision, false)
+	rev, events, err := l.list(nil, prefix, startKey, limit, revision, false)
 	if err != nil {
 		return rev, nil, err
 	}
@@ -278,11 +254,11 @@ func (l *FdbStructured) List(ctx context.Context, prefix, startKey string, limit
 	return rev, kvs, nil
 }
 
-func (l *FdbStructured) Count(ctx context.Context, prefix, startKey string, revision int64) (revRet int64, count int64, err error) {
+func (l *FDB) Count(ctx context.Context, prefix, startKey string, revision int64) (revRet int64, count int64, err error) {
 	defer func() {
 		logrus.Tracef("COUNT %s, rev=%d => rev=%d, count=%d, err=%v", prefix, revision, revRet, count, err)
 	}()
-	rev, count, err := l.InnerCount(ctx, prefix, startKey, revision)
+	rev, count, err := l.innerCount(ctx, prefix, startKey, revision)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -299,7 +275,7 @@ func (l *FdbStructured) Count(ctx context.Context, prefix, startKey string, revi
 	return rev, count, nil
 }
 
-func (l *FdbStructured) Update(ctx context.Context, key string, value []byte, revision, lease int64) (revRet int64, kvRet *server.KeyValue, updateRet bool, errRet error) {
+func (l *FDB) Update(ctx context.Context, key string, value []byte, revision, lease int64) (revRet int64, kvRet *server.KeyValue, updateRet bool, errRet error) {
 	defer func() {
 		l.adjustRevision(ctx, &revRet)
 		kvRev := int64(0)
@@ -317,7 +293,7 @@ func (l *FdbStructured) Update(ctx context.Context, key string, value []byte, re
 	}
 
 	res, _ := l.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-		rev, event, err := l.get(ctx, &tr, key, "", 1, 0, false)
+		rev, event, err := l.get(&tr, key, "", 1, 0, false)
 		if err != nil {
 			return &Result{0, nil, false, err}, nil
 		}
@@ -340,7 +316,7 @@ func (l *FdbStructured) Update(ctx context.Context, key string, value []byte, re
 			PrevKV: event.KV,
 		}
 
-		rev, err = l.Append(ctx, &tr, updateEvent)
+		rev, err = l.append(ctx, &tr, updateEvent)
 		if err != nil {
 			return &Result{0, nil, false, err}, nil
 		}
@@ -354,157 +330,12 @@ func (l *FdbStructured) Update(ctx context.Context, key string, value []byte, re
 	return castedRes.revRet, castedRes.kvRet, castedRes.updateRet, castedRes.errRet
 }
 
-func (l *FdbStructured) ttl(ctx context.Context) {
-	queue := workqueue.NewDelayingQueue()
-	rwMutex := &sync.RWMutex{}
-	ttlEventKVMap := make(map[string]*ttlEventKV)
-	go func() {
-		for l.handleTTLEvents(ctx, rwMutex, queue, ttlEventKVMap) {
-		}
-	}()
-
-	for {
-		select {
-		case <-ctx.Done():
-			queue.ShutDown()
-			return
-		default:
-		}
-
-		for event := range l.ttlEvents(ctx) {
-			if event.Delete {
-				continue
-			}
-
-			eventKV := loadTTLEventKV(rwMutex, ttlEventKVMap, event.KV.Key)
-			if eventKV == nil {
-				expires := storeTTLEventKV(rwMutex, ttlEventKVMap, event.KV)
-				logrus.Tracef("TTL add event key=%v, modRev=%v, ttl=%v", event.KV.Key, event.KV.ModRevision, expires)
-				queue.AddAfter(event.KV.Key, expires)
-			} else {
-				if event.KV.ModRevision > eventKV.modRevision {
-					expires := storeTTLEventKV(rwMutex, ttlEventKVMap, event.KV)
-					logrus.Tracef("TTL update event key=%v, modRev=%v, ttl=%v", event.KV.Key, event.KV.ModRevision, expires)
-					queue.AddAfter(event.KV.Key, expires)
-				}
-			}
-		}
-	}
-}
-
-func (l *FdbStructured) handleTTLEvents(ctx context.Context, rwMutex *sync.RWMutex, queue workqueue.DelayingInterface, store map[string]*ttlEventKV) bool {
-	key, shutdown := queue.Get()
-	if shutdown {
-		logrus.Info("TTL events work queue has shut down")
-		return false
-	}
-	defer queue.Done(key)
-
-	eventKV := loadTTLEventKV(rwMutex, store, key.(string))
-	if eventKV == nil {
-		logrus.Errorf("TTL event not found for key=%v", key)
-		return true
-	}
-
-	if expires := time.Until(eventKV.expiredAt); expires > 0 {
-		logrus.Tracef("TTL has not expired for key=%v, ttl=%v, requeuing", key, expires)
-		queue.AddAfter(key, expires)
-		return true
-	}
-
-	l.deleteTTLEvent(ctx, rwMutex, queue, store, eventKV)
-	return true
-}
-
-func (l *FdbStructured) deleteTTLEvent(ctx context.Context, rwMutex *sync.RWMutex, queue workqueue.DelayingInterface, store map[string]*ttlEventKV, preEventKV *ttlEventKV) {
-	logrus.Tracef("TTL delete key=%v, modRev=%v", preEventKV.key, preEventKV.modRevision)
-	_, _, _, err := l.Delete(ctx, preEventKV.key, preEventKV.modRevision)
-
-	rwMutex.Lock()
-	defer rwMutex.Unlock()
-	curEventKV := store[preEventKV.key]
-	if expires := time.Until(preEventKV.expiredAt); expires > 0 {
-		logrus.Tracef("TTL changed for key=%v, ttl=%v, requeuing", curEventKV.key, expires)
-		queue.AddAfter(curEventKV.key, expires)
-		return
-	}
-	if err != nil {
-		logrus.Errorf("TTL delete trigger failed for key=%v: %v, requeuing", curEventKV.key, err)
-		queue.AddAfter(curEventKV.key, retryInterval)
-		return
-	}
-
-	delete(store, curEventKV.key)
-}
-
-// ttlEvents starts a goroutine to do a ListWatch on the root prefix. First it lists
-// all non-deleted keys with a page size of 1000, then it starts watching at the
-// revision returned by the initial list. Any keys that have a Lease associated with
-// them are sent into the result channel for deferred handling of TTL expiration.
-func (l *FdbStructured) ttlEvents(ctx context.Context) chan *server.Event {
-	result := make(chan *server.Event)
-
-	go func() {
-		defer close(result)
-
-		rev, events, err := l.InnerList(ctx, nil, "/", "", 1000, 0, false)
-		for len(events) > 0 {
-			if err != nil {
-				logrus.Errorf("TTL event list failed: %v", err)
-				return
-			}
-
-			for _, event := range events {
-				if event.KV.Lease > 0 {
-					result <- event
-				}
-			}
-
-			_, events, err = l.InnerList(ctx, nil, "/", events[len(events)-1].KV.Key, 1000, rev, false)
-		}
-
-		wr := l.Watch(ctx, "/", rev)
-		if wr.CompactRevision != 0 {
-			logrus.Errorf("TTL event watch failed: %v", server.ErrCompacted)
-			return
-		}
-		for events := range wr.Events {
-			for _, event := range events {
-				if event.KV.Lease > 0 {
-					result <- event
-				}
-			}
-		}
-		logrus.Info("TTL events watch channel closed")
-	}()
-
-	return result
-}
-
-func loadTTLEventKV(rwMutex *sync.RWMutex, store map[string]*ttlEventKV, key string) *ttlEventKV {
-	rwMutex.RLock()
-	defer rwMutex.RUnlock()
-	return store[key]
-}
-
-func storeTTLEventKV(rwMutex *sync.RWMutex, store map[string]*ttlEventKV, eventKV *server.KeyValue) time.Duration {
-	rwMutex.Lock()
-	defer rwMutex.Unlock()
-	expires := time.Duration(eventKV.Lease) * time.Second
-	store[eventKV.Key] = &ttlEventKV{
-		key:         eventKV.Key,
-		modRevision: eventKV.ModRevision,
-		expiredAt:   time.Now().Add(expires),
-	}
-	return expires
-}
-
-func (l *FdbStructured) Watch(ctx context.Context, prefix string, revision int64) server.WatchResult {
+func (l *FDB) Watch(ctx context.Context, prefix string, revision int64) server.WatchResult {
 	logrus.Tracef("WATCH %s, revision=%d", prefix, revision)
 
 	// starting watching right away so we don't miss anything
 	ctx, cancel := context.WithCancel(ctx)
-	readChan := l.InnerWatch(ctx, prefix)
+	readChan := l.innerWatch(ctx, prefix)
 
 	// include the current revision in list
 	if revision > 0 {
@@ -514,16 +345,8 @@ func (l *FdbStructured) Watch(ctx context.Context, prefix string, revision int64
 	result := make(chan []*server.Event, 100)
 	wr := server.WatchResult{Events: result}
 
-	rev, kvs, err := l.After(ctx, prefix, revision, 0)
+	rev, kvs, err := l.after(prefix, revision, 0)
 	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			logrus.Errorf("Failed to list %s for revision %d: %v", prefix, revision, err)
-		}
-		if err == server.ErrCompacted {
-			compact, _ := l.CompactRevision(ctx)
-			wr.CompactRevision = compact
-			wr.CurrentRevision = rev
-		}
 		cancel()
 	}
 
@@ -540,22 +363,18 @@ func (l *FdbStructured) Watch(ctx context.Context, prefix string, revision int64
 		}
 
 		// always ensure we fully read the channel
-		for i := range readChan {
-			result <- filterWatch(i, lastRevision)
+		for events := range readChan {
+			for len(events) > 0 && events[0].KV.ModRevision <= lastRevision {
+				events = events[1:]
+			}
+
+			result <- events
 		}
 		close(result)
 		cancel()
 	}()
 
 	return wr
-}
-
-func filterWatch(events []*server.Event, rev int64) []*server.Event {
-	for len(events) > 0 && events[0].KV.ModRevision <= rev {
-		events = events[1:]
-	}
-
-	return events
 }
 
 func incrKey(tr fdb.Transaction, k fdb.KeyConvertible) error {
@@ -586,17 +405,14 @@ func getKey(tr fdb.Transaction, k fdb.KeyConvertible) (int64, error) {
 	}
 }
 
-func (f *FdbStructured) CurrentRevision(ctx context.Context) (int64, error) {
-	//if f.currentRev != 0 {
-	//	return f.currentRev, nil
-	//}
+func (f *FDB) CurrentRevision(ctx context.Context) (int64, error) {
 	key, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
 		return f.getCurrentRevision(tr)
 	})
 	return key.(int64), err
 }
 
-func (f *FdbStructured) getCurrentRevision(tr fdb.Transaction) (int64, error) {
+func (f *FDB) getCurrentRevision(tr fdb.Transaction) (int64, error) {
 	return getKey(tr, f.sequence)
 
 	//values, err := tr.GetRange(f.byRevision, fdb.RangeOptions{Limit: 1, Reverse: true}).GetSliceWithError()
@@ -613,12 +429,12 @@ func (f *FdbStructured) getCurrentRevision(tr fdb.Transaction) (int64, error) {
 	//}
 }
 
-func (f *FdbStructured) Append(ctx context.Context, tr *fdb.Transaction, event *server.Event) (retRev int64, retErr error) {
+func (f *FDB) append(ctx context.Context, tr *fdb.Transaction, event *server.Event) (retRev int64, retErr error) {
 	// if strings.HasSuffix(event.KV.Key, "pod1") || strings.HasSuffix(event.KV.Key, "pod2") || strings.HasSuffix(event.KV.Key, "pod3") {
 	// 	start := time.Now()
 	// 	defer func() {
 	// 		dur := time.Since(start)
-	// 		logrus.Errorf("Append %s, duration=%s retRev=%d", event.KV.Key, dur, retRev)
+	// 		logrus.Errorf("append %s, duration=%s retRev=%d", event.KV.Key, dur, retRev)
 	// 	}()
 	// }
 
@@ -668,7 +484,7 @@ func (f *FdbStructured) Append(ctx context.Context, tr *fdb.Transaction, event *
 	case f.notify <- revisionInt64:
 	default:
 	}
-	//logrus.Tracef("Append end")
+	//logrus.Tracef("append end")
 	return revisionInt64, err
 }
 
@@ -677,7 +493,7 @@ type InFlight struct {
 	f        fdb.FutureByteSlice
 }
 
-func (f *FdbStructured) InnerList(ctx context.Context, tr *fdb.Transaction, prefix, startKey string, limit, maxRevision int64, includeDeletes bool) (resRev int64, resEvents []*server.Event, resErr error) {
+func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevision int64, includeDeletes bool) (resRev int64, resEvents []*server.Event, resErr error) {
 	// if strings.HasSuffix(prefix, "pod1") || strings.HasSuffix(prefix, "pod2") || strings.HasSuffix(prefix, "pod3") {
 	// 	start := time.Now()
 	// 	defer func() {
@@ -840,11 +656,11 @@ func (f *FdbStructured) InnerList(ctx context.Context, tr *fdb.Transaction, pref
 	return revResult.currentRevision, revResult.events, nil
 }
 
-func (f *FdbStructured) After(ctx context.Context, prefix string, minRevision, limit int64) (int64, []*server.Event, error) {
+func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.Event, error) {
 	//start := time.Now()
 	//defer func() {
 	//	dur := time.Since(start)
-	//logrus.Tracef("After %s, minRevision=%d, duration=%s", prefix, minRevision, dur)
+	//logrus.Tracef("after %s, minRevision=%d, duration=%s", prefix, minRevision, dur)
 	//}()
 
 	//keyRange, err := f.int64ToRevisionPrefixKeyRange(minRevision)
@@ -868,14 +684,13 @@ func (f *FdbStructured) After(ctx context.Context, prefix string, minRevision, l
 		it := tr.GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
 
 		result := make([]*server.Event, 0, limit)
-		//println("here1", minRevision, limit)
 		for (int64(len(result)) < limit || limit == 0) && it.Advance() {
 			_, event, err := f.getNextByRevisionEntry(it)
 			if err != nil {
 				return nil, err
 			}
 
-			if doesEventHasPrefix(event, prefix) {
+			if doesEventHavePrefix(event, prefix) {
 				result = append(result, event)
 			}
 		}
@@ -888,7 +703,7 @@ func (f *FdbStructured) After(ctx context.Context, prefix string, minRevision, l
 		//result = append(result, event)
 		//}
 
-		//logrus.Errorf("After res: %v", result)
+		//logrus.Errorf("after res: %v", result)
 
 		//kv, err := it.Get()
 		//if err != nil {
@@ -972,7 +787,7 @@ func (f *FdbStructured) After(ctx context.Context, prefix string, minRevision, l
 	//return rev, events, err
 }
 
-func (f *FdbStructured) getNextByKeyToRevisionEntry(it *fdb.RangeIterator) (string, int64, *server.Event, error) {
+func (f *FDB) getNextByKeyToRevisionEntry(it *fdb.RangeIterator) (string, int64, *server.Event, error) {
 	kv, err := it.Get()
 	if err != nil {
 		return "", 0, nil, err
@@ -993,7 +808,7 @@ func (f *FdbStructured) getNextByKeyToRevisionEntry(it *fdb.RangeIterator) (stri
 	return key, versionstampInt64, event, nil
 }
 
-func (f *FdbStructured) getNextByRevisionEntry(it *fdb.RangeIterator) ([]byte, *server.Event, error) {
+func (f *FDB) getNextByRevisionEntry(it *fdb.RangeIterator) ([]byte, *server.Event, error) {
 	kv, err := it.Get()
 	if err != nil {
 		return nil, nil, err
@@ -1069,8 +884,8 @@ func int64ToVersionstamp(minRevision int64) tuple.Versionstamp {
 	return beginVersionstamp
 }
 
-func (f *FdbStructured) InnerCount(ctx context.Context, prefix, startKey string, revision int64) (int64, int64, error) {
-	rev, events, err := f.InnerList(ctx, nil, prefix, startKey, 0, revision, false)
+func (f *FDB) innerCount(ctx context.Context, prefix, startKey string, revision int64) (int64, int64, error) {
+	rev, events, err := f.list(nil, prefix, startKey, 0, revision, false)
 	return rev, int64(len(events)), err
 }
 
@@ -1079,7 +894,7 @@ type RevResult struct {
 	events          []*server.Event
 }
 
-func (f *FdbStructured) InnerWatch(ctx context.Context, prefix string) <-chan []*server.Event {
+func (f *FDB) innerWatch(ctx context.Context, prefix string) <-chan []*server.Event {
 	res := make(chan []*server.Event, 100)
 	values, err := f.broadcaster.Subscribe(ctx, f.startWatch)
 	if err != nil {
@@ -1101,21 +916,19 @@ func (f *FdbStructured) InnerWatch(ctx context.Context, prefix string) <-chan []
 func filter(events []*server.Event, prefix string) []*server.Event {
 	filteredEventList := make([]*server.Event, 0, len(events))
 	for _, event := range events {
-		if doesEventHasPrefix(event, prefix) {
+		if doesEventHavePrefix(event, prefix) {
 			filteredEventList = append(filteredEventList, event)
 		}
 	}
 	return filteredEventList
 }
 
-func doesEventHasPrefix(event *server.Event, prefix string) bool {
+func doesEventHavePrefix(event *server.Event, prefix string) bool {
 	return (strings.HasSuffix(prefix, "/") && strings.HasPrefix(event.KV.Key, prefix)) ||
 		event.KV.Key == prefix
 }
 
-var wId atomic.Uint64
-
-func (f *FdbStructured) startWatch() (chan interface{}, error) {
+func (f *FDB) startWatch() (chan interface{}, error) {
 	pollStart, err := f.CurrentRevision(nil)
 	if err != nil {
 		return nil, err
@@ -1126,8 +939,7 @@ func (f *FdbStructured) startWatch() (chan interface{}, error) {
 	return c, nil
 }
 
-func (f *FdbStructured) poll(result chan interface{}, pollStart int64) {
-	//watchId := wId.Add(1)
+func (f *FDB) poll(result chan interface{}, pollStart int64) {
 	f.currentRev = pollStart
 
 	lastBatchSize := math.MaxInt
@@ -1137,23 +949,19 @@ func (f *FdbStructured) poll(result chan interface{}, pollStart int64) {
 	defer close(result)
 
 	for {
-		//logrus.Errorf("poll")
 		if lastBatchSize < 100 {
 			select {
 			case <-f.ctx.Done():
-				//logrus.Errorf("timeout")
 				return
 			case check := <-f.notify:
 				if check <= f.currentRev {
-					//logrus.Tracef("already received an update")
 					continue
 				}
 			case <-wait.C:
-				//logrus.Tracef("Sleeping")
 			}
 		}
 
-		_, events, err := f.After(f.ctx, "/", f.currentRev, 500)
+		_, events, err := f.after("/", f.currentRev, 500)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				logrus.Errorf("fail to list latest changes: %v", err)
@@ -1161,33 +969,23 @@ func (f *FdbStructured) poll(result chan interface{}, pollStart int64) {
 			continue
 		}
 
-		//logrus.Tracef("POLL AFTER watchId=%d, currentRev=%d, events=%d, start=%d, lastSeenRevision=%d", watchId, f.currentRev, len(events), pollStart, lastSeenRevision)
-
 		if len(events) == 0 {
 			continue
 		}
 
 		f.currentRev = events[len(events)-1].KV.ModRevision
-		//logrus.Errorf("poll push events")
-		//f.currentRev = newRevision
 		lastBatchSize = len(events)
 		result <- events
-		//logrus.Errorf("poll pushed events")
 	}
 }
 
-func (f *FdbStructured) DbSize(ctx context.Context) (int64, error) {
+func (f *FDB) DbSize(ctx context.Context) (int64, error) {
 	result, err := f.db.Transact(func(tr fdb.Transaction) (interface{}, error) {
 		return tr.GetEstimatedRangeSizeBytes(f.kine).Get()
 	})
 	return result.(int64), err
 }
 
-// CompactRevision returns the oldest revision
-func (f *FdbStructured) CompactRevision(ctx context.Context) (int64, error) {
-	return 0, nil
-}
-
-func (f *FdbStructured) Compact(ctx context.Context, revision int64) (int64, error) {
+func (f *FDB) Compact(ctx context.Context, revision int64) (int64, error) {
 	return 0, nil
 }

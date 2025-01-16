@@ -160,7 +160,7 @@ func (l *LogStructured) Delete(ctx context.Context, key string, revision int64) 
 
 	rev, err = l.log.Append(ctx, deleteEvent)
 	if err != nil {
-		// If error on Append we assume it's a UNIQUE constraint error, so we fetch the latest (if we can)
+		// If error on append we assume it's a UNIQUE constraint error, so we fetch the latest (if we can)
 		// and return that the delete failed
 		latestRev, latestEvent, latestErr := l.get(ctx, key, "", 1, 0, true)
 		if latestErr != nil || latestEvent == nil {

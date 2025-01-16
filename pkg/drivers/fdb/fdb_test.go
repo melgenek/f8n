@@ -86,7 +86,7 @@ func TestFDB(t *testing.T) {
 		assert.NoError(t, err)
 		require.Equal(t, valuesAsSlice(events), orEmpty(result))
 
-		// _, result, err = f.InnerList(ctx, "/", "/abc/key", 0, currentRev, false)
+		// _, result, err = f.list(ctx, "/", "/abc/key", 0, currentRev, false)
 		// require.NoError(t, err)
 		// require.Equal(t, valuesAsSlice(events), orEmpty(result))
 
@@ -103,12 +103,12 @@ func TestFDB(t *testing.T) {
 		require.Equal(t, newRev, rev)
 		require.Equal(t, []*server.KeyValue{event}, result)
 
-		// rev, result, err = f.After(ctx, "", currentRev, int64(n))
+		// rev, result, err = f.after(ctx, "", currentRev, int64(n))
 		// require.NoError(t, err)
 		// require.Equal(t, newRev, rev)
 		// require.Empty(t, result)
 
-		// rev, result, err = f.After(ctx, "/abc/", currentRev, int64(n))
+		// rev, result, err = f.after(ctx, "/abc/", currentRev, int64(n))
 		// require.NoError(t, err)
 		// require.Equal(t, newRev, rev)
 		// require.Equal(t, []*server.Event{event}, result)
@@ -117,12 +117,12 @@ func TestFDB(t *testing.T) {
 		history = append(history, event)
 		currentRev = newRev
 
-		// rev, result, err = f.After(ctx, "/abc/", currentRev, int64(n))
+		// rev, result, err = f.after(ctx, "/abc/", currentRev, int64(n))
 		// require.NoError(t, err)
 		// require.Equal(t, newRev, rev)
 		// require.Empty(t, result)
 
-		// rev, result, err = f.After(ctx, "/", currentRev, int64(n))
+		// rev, result, err = f.after(ctx, "/", currentRev, int64(n))
 		// require.NoError(t, err)
 		// require.Equal(t, newRev, rev)
 		// require.Empty(t, result)
@@ -156,7 +156,7 @@ func TestFDB(t *testing.T) {
 	events.Set(0, deleteEvent)
 	history = append(history, deleteEvent)
 
-	// rev, result, err := f.InnerList(ctx, "/abc/", "/abc/key", 0, 0, true)
+	// rev, result, err := f.list(ctx, "/abc/", "/abc/key", 0, 0, true)
 	// require.NoError(t, err)
 	// require.Equal(t, valuesAsSlice(events), result)
 	// require.Equal(t, rev, currentRev)
@@ -173,7 +173,7 @@ func TestFDB(t *testing.T) {
 	require.Equal(t, valuesAsSlice(events), result)
 	require.Equal(t, rev, currentRev)
 
-	// rev, result, err = f.InnerList(ctx, "/", "/", 0, 0, false)
+	// rev, result, err = f.list(ctx, "/", "/", 0, 0, false)
 	// require.NoError(t, err)
 	// require.Equal(t, valuesAsSlice(events), result)
 	// require.Equal(t, rev, currentRev)
