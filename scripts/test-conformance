@@ -22,7 +22,7 @@ test-conformance() {
         --rm -d --name $name \
         --entrypoint /usr/bin/sh \
         -e "KUBECONFIG=/root/.kube/config" \
-        -e "E2E_FOCUS=should\snot\sbe\sblocked\sby\sdependency\scircle" \
+        -e "E2E_FOCUS=sig-api-machinery" \
         -e "E2E_SKIP=StorageVersionAPI|Slow|Flaky" \
         -e "E2E_EXTRA_ARGS=--ginkgo.fail-fast" \
         registry.k8s.io/conformance:$version \
@@ -32,3 +32,19 @@ test-conformance() {
 }
 
 test-conformance
+
+# -e "E2E_FOCUS=should\snot\sbe\sblocked\sby\sdependency\scircle" \
+
+
+#docker container run \
+#        --rm -d --name conformance \
+#        --entrypoint /usr/bin/sh \
+#        -e "KUBECONFIG=/root/.kube/config" \
+#        -e "E2E_FOCUS=sig-api-machinery" \
+#        -e "E2E_SKIP=StorageVersionAPI|Slow|Flaky" \
+#        -e "E2E_EXTRA_ARGS=--ginkgo.fail-fast" \
+#        registry.k8s.io/conformance:v1.29.4 \
+#        -c 'mkdir -p /root/.kube; sleep 36000'
+#
+#docker cp /tmp/K5V0ah/servers/1/kubeconfig.yaml conformance:/root/.kube/config
+#docker exec conformance /usr/local/bin/kubeconformance
