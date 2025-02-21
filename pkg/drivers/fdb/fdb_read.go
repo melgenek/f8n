@@ -135,7 +135,6 @@ func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevis
 
 func (f *FDB) Get(ctx context.Context, key, rangeEnd string, limit, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
 	defer func() {
-		f.adjustRevision(&revRet)
 		logrus.Tracef("GET %s, rev=%d => rev=%d, kv=%v, err=%v", key, revision, revRet, kvRet != nil, errRet)
 	}()
 

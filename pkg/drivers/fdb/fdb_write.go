@@ -10,7 +10,6 @@ import (
 
 func (f *FDB) Create(ctx context.Context, key string, value []byte, lease int64) (revRet int64, errRet error) {
 	defer func() {
-		f.adjustRevision(&revRet)
 		logrus.Tracef("CREATE %s, size=%d, lease=%d => rev=%d, err=%v", key, len(value), lease, revRet, errRet)
 	}()
 
@@ -53,7 +52,6 @@ func (f *FDB) Create(ctx context.Context, key string, value []byte, lease int64)
 
 func (f *FDB) Update(ctx context.Context, key string, value []byte, revision, lease int64) (revRet int64, kvRet *server.KeyValue, updateRet bool, errRet error) {
 	defer func() {
-		f.adjustRevision(&revRet)
 		kvRev := int64(0)
 		if kvRet != nil {
 			kvRev = kvRet.ModRevision
@@ -114,7 +112,6 @@ func (f *FDB) Update(ctx context.Context, key string, value []byte, revision, le
 
 func (f *FDB) Delete(ctx context.Context, key string, revision int64) (revRet int64, kvRet *server.KeyValue, deletedRet bool, errRet error) {
 	defer func() {
-		f.adjustRevision(&revRet)
 		logrus.Tracef("DELETE %s, rev=%d => rev=%d, kv=%v, deleted=%v, err=%v", key, revision, revRet, kvRet != nil, deletedRet, errRet)
 	}()
 
