@@ -210,16 +210,5 @@ func (f *FDB) CurrentRevision(ctx context.Context) (int64, error) {
 }
 
 func (f *FDB) getCurrentRevision(tr fdb.Transaction) (int64, error) {
-	values, err := tr.GetRange(f.byRevision, fdb.RangeOptions{Limit: 1, Reverse: true}).GetSliceWithError()
-	if err != nil {
-		return int64(0), err
-	} else if len(values) == 0 {
-		return int64(0), nil
-	} else if unpackedKey, err := f.byRevision.Unpack(values[0].Key); err != nil {
-		return int64(0), err
-	} else {
-		versionstamp := unpackedKey[0].(tuple.Versionstamp)
-		return versionstampToInt64(&versionstamp), nil
-	}
-	//return tr.GetReadVersion().Get()
+	return tr.GetReadVersion().Get()
 }

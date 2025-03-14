@@ -42,12 +42,11 @@ The implementation is in the `pkg/drivers/fdb` directory.
 ## TODO
 
 Here is a list of implementation details that need to be completed before starting scale testing of this implementation.
-- [ ] Use FDB Versionstamps for ETCD revision generation https://apple.github.io/foundationdb/data-modeling.html#versionstamps
 - [ ] Current write amplification is x4. Reduce it to x2 by querying the previous value instead of storing it in the record.
 - [ ] Value size is limited to 100KiB. Extend the size to 10MiB (transaction size limit) https://apple.github.io/foundationdb/largeval.html
 - [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
 - [ ] Implement compaction
-- [ ] Make the lookup of the current revision more efficient
+- [ ] get rid of `adjustRevision`
 
 
 
