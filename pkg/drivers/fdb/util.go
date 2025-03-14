@@ -50,6 +50,16 @@ func eventToTuple(event *server.Event) tuple.Tuple {
 	}
 }
 
+func (f *FDB) adjustRevision(rev *int64) {
+	if *rev != 0 {
+		return
+	}
+
+	if newRev, err := f.CurrentRevision(nil); err == nil {
+		*rev = newRev
+	}
+}
+
 func incrKey(tr fdb.Transaction, k fdb.KeyConvertible) error {
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.LittleEndian, int64(1))

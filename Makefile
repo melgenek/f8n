@@ -18,7 +18,6 @@ validate:
 build:
 	docker build \
 		$(DEFAULT_BUILD_ARGS) --progress=plain --build-arg="DRONE_TAG=$(DRONE_TAG)"  --build-arg="CROSS=$(CROSS)" \
-		--platform linux/amd64 \
 		-f Dockerfile -t rancher/kine:dev --target=binary .
 
 
