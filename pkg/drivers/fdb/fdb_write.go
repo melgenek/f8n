@@ -14,10 +14,15 @@ func (f *FDB) Create(ctx context.Context, key string, value []byte, lease int64)
 		logrus.Tracef("CREATE %s, size=%d, lease=%d => rev=%d, err=%v", key, len(value), lease, revRet, errRet)
 	}()
 
-	rev, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
+	type Result struct {
+		revRet   interface{}
+		isFuture bool
+	}
+
+	res, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
 		rev, prevEvent, err := f.get(&tr, key, "", 1, 0, true)
 		if err != nil {
-			return int64(0), err
+			return Result{int64(0), false}, err
 		}
 		createEvent := &server.Event{
 			Create: true,
@@ -33,22 +38,40 @@ func (f *FDB) Create(ctx context.Context, key string, value []byte, lease int64)
 		if prevEvent != nil {
 			if !prevEvent.Delete {
 				logrus.Tracef("ERR_KEY_EXISTS %s, prevEvent=%+v", key, prevEvent)
-				return int64(0), server.ErrKeyExists
+				return Result{int64(0), false}, server.ErrKeyExists
 			}
 			createEvent.PrevKV = prevEvent.KV
 		}
 
-		return f.append(&tr, createEvent)
+		revF, err := f.append(&tr, createEvent)
+		if err != nil {
+			return &Result{int64(0), false}, err
+		}
+		return &Result{revF, true}, nil
 	})
 
 	if err != nil {
-		select {
-		case f.triggerWatch <- rev.(int64):
-		default:
-		}
+		return 0, err
 	}
 
-	return rev.(int64), err
+	castedRes := res.(*Result)
+
+	var rev int64
+	if castedRes.isFuture {
+		revisionKey, err := castedRes.revRet.(fdb.FutureKey).Get()
+		if err != nil {
+			return 0, err
+		}
+		rev = versionstampBytesToInt64(revisionKey)
+		select {
+		case f.triggerWatch <- rev:
+		default:
+		}
+	} else {
+		rev = castedRes.revRet.(int64)
+	}
+
+	return rev, nil
 }
 
 func (f *FDB) Update(ctx context.Context, key string, value []byte, revision, lease int64) (revRet int64, kvRet *server.KeyValue, updateRet bool, errRet error) {
@@ -62,24 +85,24 @@ func (f *FDB) Update(ctx context.Context, key string, value []byte, revision, le
 	}()
 
 	type Result struct {
-		revRet    int64
+		revRet    interface{}
+		isFuture  bool
 		kvRet     *server.KeyValue
 		updateRet bool
-		errRet    error
 	}
 
-	res, _ := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
+	res, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
 		rev, event, err := f.get(&tr, key, "", 1, 0, false)
 		if err != nil {
-			return &Result{0, nil, false, err}, nil
+			return &Result{int64(0), false, nil, false}, err
 		}
 
 		if event == nil {
-			return &Result{0, nil, false, nil}, nil
+			return &Result{int64(0), false, nil, false}, nil
 		}
 
 		if event.KV.ModRevision != revision {
-			return &Result{rev, event.KV, false, nil}, nil
+			return &Result{rev, false, event.KV, false}, nil
 		}
 
 		updateEvent := &server.Event{
@@ -92,24 +115,34 @@ func (f *FDB) Update(ctx context.Context, key string, value []byte, revision, le
 			PrevKV: event.KV,
 		}
 
-		rev, err = f.append(&tr, updateEvent)
+		revF, err := f.append(&tr, updateEvent)
 		if err != nil {
-			return &Result{0, nil, false, err}, nil
+			return &Result{int64(0), false, nil, false}, err
 		}
-
-		updateEvent.KV.ModRevision = rev
-		return &Result{rev, updateEvent.KV, true, err}, nil
+		return &Result{revF, true, updateEvent.KV, true}, nil
 	})
+	if err != nil {
+		return 0, nil, false, err
+	}
 	castedRes := res.(*Result)
 
-	if castedRes.errRet != nil {
+	var rev int64
+	if castedRes.isFuture {
+		revisionKey, err := castedRes.revRet.(fdb.FutureKey).Get()
+		if err != nil {
+			return 0, nil, false, err
+		}
+		rev = versionstampBytesToInt64(revisionKey)
+		castedRes.kvRet.ModRevision = rev
 		select {
-		case f.triggerWatch <- castedRes.revRet:
+		case f.triggerWatch <- rev:
 		default:
 		}
+	} else {
+		rev = castedRes.revRet.(int64)
 	}
 
-	return castedRes.revRet, castedRes.kvRet, castedRes.updateRet, castedRes.errRet
+	return rev, castedRes.kvRet, castedRes.updateRet, nil
 }
 
 func (f *FDB) Delete(ctx context.Context, key string, revision int64) (revRet int64, kvRet *server.KeyValue, deletedRet bool, errRet error) {
@@ -119,28 +152,28 @@ func (f *FDB) Delete(ctx context.Context, key string, revision int64) (revRet in
 	}()
 
 	type Result struct {
-		revRet     int64
+		revRet     interface{}
+		isFuture   bool
 		kvRet      *server.KeyValue
 		deletedRet bool
-		errRet     error
 	}
 
-	res, _ := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
+	res, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
 		rev, event, err := f.get(&tr, key, "", 1, 0, true)
 		if err != nil {
-			return &Result{0, nil, false, err}, nil
+			return &Result{int64(0), false, nil, false}, err
 		}
 
 		if event == nil {
-			return &Result{rev, nil, true, nil}, nil
+			return &Result{rev, false, nil, true}, nil
 		}
 
 		if event.Delete {
-			return &Result{rev, event.KV, true, nil}, nil
+			return &Result{rev, false, event.KV, true}, nil
 		}
 
 		if revision != 0 && event.KV.ModRevision != revision {
-			return &Result{rev, event.KV, false, nil}, nil
+			return &Result{rev, false, event.KV, false}, nil
 		}
 
 		deleteEvent := &server.Event{
@@ -149,37 +182,50 @@ func (f *FDB) Delete(ctx context.Context, key string, revision int64) (revRet in
 			PrevKV: event.KV,
 		}
 
-		rev, err = f.append(&tr, deleteEvent)
+		revF, err := f.append(&tr, deleteEvent)
 		if err != nil {
-			return &Result{0, nil, false, err}, nil
+			return &Result{int64(0), false, nil, false}, err
 		}
-		deleteEvent.KV.ModRevision = rev
-		return &Result{rev, event.KV, true, err}, nil
+		return &Result{revF, true, event.KV, true}, nil
 	})
-	castedRes := res.(*Result)
+	if err != nil {
+		return 0, nil, false, err
+	}
 
-	if castedRes.errRet != nil {
+	castedRes := res.(*Result)
+	var rev int64
+	if castedRes.isFuture {
+		revisionKey, err := castedRes.revRet.(fdb.FutureKey).Get()
+		if err != nil {
+			return 0, nil, false, err
+		}
+		rev = versionstampBytesToInt64(revisionKey)
+		castedRes.kvRet.ModRevision = rev
 		select {
-		case f.triggerWatch <- castedRes.revRet:
+		case f.triggerWatch <- rev:
 		default:
 		}
+	} else {
+		rev = castedRes.revRet.(int64)
 	}
 
-	return castedRes.revRet, castedRes.kvRet, castedRes.deletedRet, castedRes.errRet
+	return rev, castedRes.kvRet, castedRes.deletedRet, nil
 }
 
-func (f *FDB) append(tr *fdb.Transaction, event *server.Event) (retRev int64, retErr error) {
+func (f *FDB) append(tr *fdb.Transaction, event *server.Event) (retRev fdb.FutureKey, retErr error) {
 	record := eventToTuple(event).Pack()
-	if err := incrKey(*tr, f.currentRevision); err != nil {
-		return 0, err
+	newRev := tuple.IncompleteVersionstamp(0)
+	if revisionKey, err := f.byRevision.PackWithVersionstamp(tuple.Tuple{newRev}); err != nil {
+		return nil, err
+	} else {
+		tr.SetVersionstampedKey(revisionKey, record)
 	}
 
-	newRev, err := f.getCurrentRevision(*tr)
-	if err != nil {
-		return 0, err
+	if revisionKey, err := f.byKeyAndRevision.PackWithVersionstamp(tuple.Tuple{event.KV.Key, newRev}); err != nil {
+		return nil, err
+	} else {
+		tr.SetVersionstampedKey(revisionKey, record)
 	}
 
-	tr.Set(f.byRevision.Pack(tuple.Tuple{newRev}), record)
-	tr.Set(f.byKeyAndRevision.Pack(tuple.Tuple{event.KV.Key, newRev}), record)
-	return newRev, err
+	return tr.GetVersionstamp(), nil
 }

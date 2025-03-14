@@ -134,7 +134,8 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 }
 
 func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.Event, error) {
-	begin := f.byRevision.Sub(minRevision)
+	begin := f.byRevision.Pack(tuple.Tuple{int64ToVersionstamp(minRevision)})
+	begin = begin[:len(begin)-1]
 	_, end := f.byRevision.FDBRangeKeys()
 
 	// https://forums.foundationdb.org/t/ranges-without-explicit-end-go/773/11
@@ -144,6 +145,14 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.E
 		Begin: fdb.FirstGreaterThan(begin),
 		End:   fdb.FirstGreaterOrEqual(end),
 	}
+
+	//if err != nil {
+	//	return 0, nil, err
+	//}
+	//begin = selector.Begin.FDBKey()
+	//fmt.Println(begin)
+	//fmt.Println(selector.End.FDBKey())
+	//selector = fdb.KeyRange{Begin: begin[:len(begin)-1], End: selector.End.FDBKey()}
 
 	result, err := f.db.Transact(func(tr fdb.Transaction) (interface{}, error) {
 		it := tr.GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
@@ -187,7 +196,8 @@ func (f *FDB) getNextByRevisionEntry(it *fdb.RangeIterator) ([]byte, *server.Eve
 	if err != nil {
 		return nil, nil, err
 	}
-	versionstampInt64 := k[0].(int64)
+	versionstamp := k[0].(tuple.Versionstamp)
+	versionstampInt64 := versionstampToInt64(&versionstamp)
 	unpackedTuple, err := tuple.Unpack(kv.Value)
 	if err != nil {
 		return nil, nil, err

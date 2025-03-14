@@ -30,6 +30,7 @@ test-conformance() {
     docker cp $KUBECONFIG $name:/root/.kube/config
     docker exec $name /usr/local/bin/kubeconformance
 }
+# -e "E2E_FOCUS=ENABLE_CLIENT_GO_WATCH_LIST_ALPHA" \
 
 test-conformance
 

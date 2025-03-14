@@ -1,9 +1,7 @@
 package fdb
 
 import (
-	"bytes"
 	"encoding/binary"
-	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 )
@@ -60,30 +58,16 @@ func (f *FDB) adjustRevision(rev *int64) {
 	}
 }
 
-func incrKey(tr fdb.Transaction, k fdb.KeyConvertible) error {
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.LittleEndian, int64(1))
-	if err != nil {
-		return err
-	}
-	one := buf.Bytes()
-	tr.Add(k, one)
-	return nil
+func versionstampBytesToInt64(bytes []byte) int64 {
+	return int64(binary.BigEndian.Uint64(bytes[:8]))
 }
 
-func getKey(tr fdb.Transaction, k fdb.KeyConvertible) (int64, error) {
-	byteVal, err := tr.Get(k).Get()
-	if err != nil {
-		return 0, err
-	}
-	if byteVal == nil {
-		return 0, nil
-	}
-	var numVal int64
-	err = binary.Read(bytes.NewReader(byteVal), binary.LittleEndian, &numVal)
-	if err != nil {
-		return 0, err
-	} else {
-		return numVal, nil
-	}
+func versionstampToInt64(versionstamp *tuple.Versionstamp) int64 {
+	return versionstampBytesToInt64(versionstamp.TransactionVersion[:])
+}
+
+func int64ToVersionstamp(minRevision int64) tuple.Versionstamp {
+	beginVersionstamp := tuple.IncompleteVersionstamp(0xFFFF)
+	binary.BigEndian.PutUint64(beginVersionstamp.TransactionVersion[:], uint64(minRevision))
+	return beginVersionstamp
 }

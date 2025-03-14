@@ -47,6 +47,7 @@ Here is a list of implementation details that need to be completed before starti
 - [ ] Value size is limited to 100KiB. Extend the size to 10MiB (transaction size limit) https://apple.github.io/foundationdb/largeval.html
 - [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
 - [ ] Implement compaction
+- [ ] Make the lookup of the current revision more efficient
 
 
 
@@ -63,3 +64,6 @@ Here is a list of implementation details that need to be completed before starti
 - https://forums.foundationdb.org/t/what-is-the-most-efficient-way-to-generate-version-stamps-in-fdb/2062
 - https://forums.foundationdb.org/t/versionstamp-vs-committedversion/600/4
 - https://forums.foundationdb.org/t/versionstamp-performance/705
+- https://forums.foundationdb.org/t/get-current-versionstamp/586/3
+- https://forums.foundationdb.org/t/versionstamp-vs-committedversion/600/5
+- 
