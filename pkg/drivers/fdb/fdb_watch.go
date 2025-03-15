@@ -135,7 +135,6 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 
 func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.Event, error) {
 	begin := f.byRevision.Pack(tuple.Tuple{int64ToVersionstamp(minRevision)})
-	begin = begin[:len(begin)-1]
 	_, end := f.byRevision.FDBRangeKeys()
 
 	// https://forums.foundationdb.org/t/ranges-without-explicit-end-go/773/11
@@ -145,14 +144,6 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.E
 		Begin: fdb.FirstGreaterThan(begin),
 		End:   fdb.FirstGreaterOrEqual(end),
 	}
-
-	//if err != nil {
-	//	return 0, nil, err
-	//}
-	//begin = selector.Begin.FDBKey()
-	//fmt.Println(begin)
-	//fmt.Println(selector.End.FDBKey())
-	//selector = fdb.KeyRange{Begin: begin[:len(begin)-1], End: selector.End.FDBKey()}
 
 	result, err := f.db.Transact(func(tr fdb.Transaction) (interface{}, error) {
 		it := tr.GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
@@ -169,16 +160,12 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.E
 			}
 		}
 
-		resultRev := int64(0)
-		if minRevision > 0 || len(result) != 0 {
-			rev, err := f.getCurrentRevision(tr)
-			if err != nil {
-				return nil, err
-			}
-			resultRev = rev
+		rev, err := f.getCurrentRevision(tr)
+		if err != nil {
+			return nil, err
 		}
 
-		return &RevResult{currentRevision: resultRev, events: result}, nil
+		return &RevResult{currentRevision: rev, events: result}, nil
 	})
 	if err != nil {
 		return 0, nil, err

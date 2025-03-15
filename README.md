@@ -46,7 +46,7 @@ Here is a list of implementation details that need to be completed before starti
 - [ ] Value size is limited to 100KiB. Extend the size to 10MiB (transaction size limit) https://apple.github.io/foundationdb/largeval.html
 - [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
 - [ ] Implement compaction
-- [ ] get rid of `adjustRevision`
+
 
 
 

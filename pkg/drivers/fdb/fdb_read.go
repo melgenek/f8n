@@ -100,14 +100,11 @@ func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevis
 			result = append(result, candidateEvent)
 		}
 
-		rev := int64(0)
-		if maxRevision > 0 || len(result) != 0 {
-			if rev, err = f.getCurrentRevision(tr); err != nil {
-				return nil, err
-			}
+		if rev, err := f.getCurrentRevision(tr); err != nil {
+			return nil, err
+		} else {
+			return &RevResult{currentRevision: rev, events: result}, nil
 		}
-
-		return &RevResult{currentRevision: rev, events: result}, nil
 	}
 
 	var result interface{}
@@ -135,7 +132,6 @@ func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevis
 
 func (f *FDB) Get(ctx context.Context, key, rangeEnd string, limit, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
 	defer func() {
-		f.adjustRevision(&revRet)
 		logrus.Tracef("GET %s, rev=%d => rev=%d, kv=%v, err=%v", key, revision, revRet, kvRet != nil, errRet)
 	}()
 
@@ -150,9 +146,6 @@ func (f *FDB) get(tr *fdb.Transaction, key, rangeEnd string, limit, revision int
 	rev, events, err := f.list(tr, key, rangeEnd, limit, revision, includeDeletes)
 	if err != nil {
 		return 0, nil, err
-	}
-	if revision != 0 {
-		rev = revision
 	}
 	if len(events) == 0 {
 		return rev, nil, nil

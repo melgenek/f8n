@@ -48,16 +48,6 @@ func eventToTuple(event *server.Event) tuple.Tuple {
 	}
 }
 
-func (f *FDB) adjustRevision(rev *int64) {
-	if *rev != 0 {
-		return
-	}
-
-	if newRev, err := f.CurrentRevision(nil); err == nil {
-		*rev = newRev
-	}
-}
-
 func versionstampBytesToInt64(bytes []byte) int64 {
 	return int64(binary.BigEndian.Uint64(bytes[:8]))
 }
