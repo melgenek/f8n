@@ -46,7 +46,8 @@ Here is a list of implementation details that need to be completed before starti
 - [ ] Value size is limited to 100KiB. Extend the size to 10MiB (transaction size limit) https://apple.github.io/foundationdb/largeval.html
 - [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
 - [ ] Implement compaction
-
+- [ ] put ttl events into a separate slice
+- [ ] do not deserialize all the data during counting
 
 
 
@@ -65,4 +66,5 @@ Here is a list of implementation details that need to be completed before starti
 - https://forums.foundationdb.org/t/versionstamp-performance/705
 - https://forums.foundationdb.org/t/get-current-versionstamp/586/3
 - https://forums.foundationdb.org/t/versionstamp-vs-committedversion/600/5
-- 
+- https://forums.foundationdb.org/t/building-scalable-log-streaming-on-foundationdb/2781/10
+- https://github.com/richardartoul/tsdb-layer
