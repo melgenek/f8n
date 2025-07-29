@@ -6,53 +6,46 @@ import (
 	"github.com/k3s-io/kine/pkg/server"
 )
 
-func tupleToEvent(versionstamp int64, t tuple.Tuple) *server.Event {
+func eventToRecord(event *server.Event) *Record {
+	return &Record{
+		Key:      event.KV.Key,
+		IsCreate: event.Create,
+		IsDelete: event.Delete,
+		Lease:    event.KV.Lease,
+		Value:    event.KV.Value,
+	}
+}
+
+func revRecordToEvent(revRecord *RevRecord) *server.Event {
 	event := &server.Event{
-		Create: t[0].(bool),
-		Delete: t[1].(bool),
+		Create: revRecord.Record.IsCreate,
+		Delete: revRecord.Record.IsDelete,
 		KV: &server.KeyValue{
-			ModRevision:    versionstamp,
-			Key:            t[2].(string),
-			CreateRevision: t[3].(int64),
-			Lease:          t[4].(int64),
-			Value:          t[5].([]byte),
-		},
-		PrevKV: &server.KeyValue{
-			ModRevision: t[6].(int64),
-			Value:       t[7].([]byte),
+			Key:            revRecord.Record.Key,
+			CreateRevision: versionstampToInt64(revRecord.GetCreateRevision()),
+			ModRevision:    versionstampToInt64(revRecord.Rev),
+			Lease:          revRecord.Record.Lease,
+			Value:          revRecord.Record.Value,
 		},
 	}
 	if event.Create {
 		event.KV.CreateRevision = event.KV.ModRevision
 		event.PrevKV = nil
 	}
-	return event
-}
+	if revRecord.Record.PrevRevision != stubVersionstamp {
+		event.PrevKV = &server.KeyValue{
+			ModRevision: versionstampToInt64(revRecord.Record.PrevRevision),
+		}
+	}
 
-func eventToTuple(event *server.Event) tuple.Tuple {
-	if event.KV == nil {
-		event.KV = &server.KeyValue{}
-	}
-	if event.PrevKV == nil {
-		event.PrevKV = &server.KeyValue{}
-	}
-	return tuple.Tuple{
-		event.Create,
-		event.Delete,
-		event.KV.Key,
-		event.KV.CreateRevision,
-		event.KV.Lease,
-		event.KV.Value,
-		event.PrevKV.ModRevision,
-		event.PrevKV.Value,
-	}
+	return event
 }
 
 func versionstampBytesToInt64(bytes []byte) int64 {
 	return int64(binary.BigEndian.Uint64(bytes[:8]))
 }
 
-func versionstampToInt64(versionstamp *tuple.Versionstamp) int64 {
+func versionstampToInt64(versionstamp tuple.Versionstamp) int64 {
 	return versionstampBytesToInt64(versionstamp.TransactionVersion[:])
 }
 
@@ -60,4 +53,14 @@ func int64ToVersionstamp(minRevision int64) tuple.Versionstamp {
 	beginVersionstamp := tuple.IncompleteVersionstamp(0xFFFF)
 	binary.BigEndian.PutUint64(beginVersionstamp.TransactionVersion[:], uint64(minRevision))
 	return beginVersionstamp
+}
+
+var stubVersionstamp = createStubVersionstamp()
+
+func createStubVersionstamp() tuple.Versionstamp {
+	versionstamp := tuple.IncompleteVersionstamp(10)
+	for i := 0; i < 10; i++ {
+		versionstamp.TransactionVersion[i] = byte(i)
+	}
+	return versionstamp
 }

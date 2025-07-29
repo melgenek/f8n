@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+type AfterResult struct {
+	currentRevision int64
+	revRecords      []*server.Event
+}
+
 func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.WatchResult {
 	logrus.Tracef("WATCH %s, revision=%d", prefix, revision)
 
@@ -45,7 +50,7 @@ func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.W
 		}
 
 		for events := range readChan {
-			//skip events that have already been sent in the initial batch
+			//skip revRecords that have already been sent in the initial batch
 			for len(events) > 0 && events[0].KV.ModRevision <= lastRevision {
 				events = events[1:]
 			}
@@ -72,7 +77,7 @@ func (f *FDB) innerWatch(ctx context.Context, prefix string) <-chan []*server.Ev
 			events := batch.([]*server.Event)
 			filteredEventList := make([]*server.Event, 0, len(events))
 			for _, event := range events {
-				if doesEventHavePrefix(event, prefix) {
+				if doesEventHavePrefix(event.KV.Key, prefix) {
 					filteredEventList = append(filteredEventList, event)
 				}
 			}
@@ -84,9 +89,8 @@ func (f *FDB) innerWatch(ctx context.Context, prefix string) <-chan []*server.Ev
 	return res
 }
 
-func doesEventHavePrefix(event *server.Event, prefix string) bool {
-	return (strings.HasSuffix(prefix, "/") && strings.HasPrefix(event.KV.Key, prefix)) ||
-		event.KV.Key == prefix
+func doesEventHavePrefix(key string, prefix string) bool {
+	return (strings.HasSuffix(prefix, "/") && strings.HasPrefix(key, prefix)) || key == prefix
 }
 
 func (f *FDB) startWatch() (chan interface{}, error) {
@@ -105,7 +109,7 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 
 	lastBatchSize := math.MaxInt
 
-	wait := time.NewTicker(1 * time.Second)
+	wait := time.NewTicker(100 * time.Millisecond)
 	defer wait.Stop()
 	defer close(result)
 
@@ -134,8 +138,8 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 }
 
 func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.Event, error) {
-	begin := f.byRevision.Pack(tuple.Tuple{int64ToVersionstamp(minRevision)})
-	_, end := f.byRevision.FDBRangeKeys()
+	begin := f.byRevision.GetSubspace().Pack(tuple.Tuple{int64ToVersionstamp(minRevision)})
+	_, end := f.byRevision.GetSubspace().FDBRangeKeys()
 
 	// https://forums.foundationdb.org/t/ranges-without-explicit-end-go/773/11
 	// https://forums.foundationdb.org/t/foundation-db-go-lang-pagination/1305/17
@@ -150,12 +154,31 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.E
 
 		result := make([]*server.Event, 0, limit)
 		for (int64(len(result)) < limit || limit == 0) && it.Advance() {
-			_, event, err := f.getNextByRevisionEntry(it)
+			kv, err := it.Get()
+			if err != nil {
+				return nil, err
+			}
+			rev, key, err := f.byRevision.ParseKV(kv)
 			if err != nil {
 				return nil, err
 			}
 
-			if doesEventHavePrefix(event, prefix) {
+			if doesEventHavePrefix(key, prefix) {
+				record, err := f.byKeyAndRevision.Get(&tr, &KeyAndRevision{Key: key, Rev: rev})
+				if err != nil {
+					return nil, err
+				}
+				event := revRecordToEvent(&RevRecord{Rev: rev, Record: record})
+
+				if record.PrevRevision != stubVersionstamp {
+					prevRecord, err := f.byKeyAndRevision.Get(&tr, &KeyAndRevision{Key: key, Rev: record.PrevRevision})
+					if err != nil {
+						return nil, err
+					}
+					prevEvent := revRecordToEvent(&RevRecord{Rev: record.PrevRevision, Record: prevRecord})
+					event.PrevKV = prevEvent.KV
+				}
+
 				result = append(result, event)
 			}
 		}
@@ -165,30 +188,11 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.E
 			return nil, err
 		}
 
-		return &RevResult{currentRevision: rev, events: result}, nil
+		return &AfterResult{currentRevision: rev, revRecords: result}, nil
 	})
 	if err != nil {
 		return 0, nil, err
 	}
 
-	return result.(*RevResult).currentRevision, result.(*RevResult).events, err
-}
-
-func (f *FDB) getNextByRevisionEntry(it *fdb.RangeIterator) ([]byte, *server.Event, error) {
-	kv, err := it.Get()
-	if err != nil {
-		return nil, nil, err
-	}
-	k, err := f.byRevision.Unpack(kv.Key)
-	if err != nil {
-		return nil, nil, err
-	}
-	versionstamp := k[0].(tuple.Versionstamp)
-	versionstampInt64 := versionstampToInt64(&versionstamp)
-	unpackedTuple, err := tuple.Unpack(kv.Value)
-	if err != nil {
-		return nil, nil, err
-	}
-	event := tupleToEvent(versionstampInt64, unpackedTuple)
-	return kv.Key, event, nil
+	return result.(*AfterResult).currentRevision, result.(*AfterResult).revRecords, err
 }

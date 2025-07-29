@@ -62,7 +62,7 @@ func (f *FDB) ttl(ctx context.Context) {
 func (f *FDB) handleTTLEvents(ctx context.Context, rwMutex *sync.RWMutex, queue workqueue.DelayingInterface, store map[string]*ttlEventKV) bool {
 	key, shutdown := queue.Get()
 	if shutdown {
-		logrus.Info("TTL events work queue has shut down")
+		logrus.Info("TTL revRecords work queue has shut down")
 		return false
 	}
 	defer queue.Done(key)
@@ -114,20 +114,20 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 	go func() {
 		defer close(result)
 
-		rev, events, err := f.list(nil, "/", "", 1000, 0, false)
-		for len(events) > 0 {
+		rev, revRecords, err := f.list(nil, "/", "", 1000, 0, false)
+		for len(revRecords) > 0 {
 			if err != nil {
-				logrus.Errorf("TTL event list failed: %v", err)
+				logrus.Errorf("TTL revRecord list failed: %v", err)
 				return
 			}
 
-			for _, event := range events {
-				if event.KV.Lease > 0 {
-					result <- event
+			for _, revRecord := range revRecords {
+				if revRecord.Record.Lease > 0 {
+					result <- revRecordToEvent(revRecord)
 				}
 			}
 
-			_, events, err = f.list(nil, "/", events[len(events)-1].KV.Key, 1000, rev, false)
+			_, revRecords, err = f.list(nil, "/", revRecords[len(revRecords)-1].Record.Key, 1000, rev, false)
 		}
 
 		wr := f.Watch(ctx, "/", rev)
@@ -142,7 +142,7 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 				}
 			}
 		}
-		logrus.Info("TTL events watch channel closed")
+		logrus.Info("TTL revRecords watch channel closed")
 	}()
 
 	return result

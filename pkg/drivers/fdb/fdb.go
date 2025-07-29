@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
-	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/broadcaster"
 	"github.com/k3s-io/kine/pkg/drivers"
 	"github.com/k3s-io/kine/pkg/server"
@@ -28,10 +28,8 @@ type FDB struct {
 	db               fdb.Database
 	kine             directory.DirectorySubspace
 
-	byRevision       subspace.Subspace
-	byKeyAndRevision subspace.Subspace
-	// todo replace with versionstamps
-	currentRevision subspace.Subspace
+	byRevision       Subspace[tuple.Versionstamp, string]
+	byKeyAndRevision Subspace[*KeyAndRevision, *Record]
 
 	triggerWatch chan int64
 	broadcaster  broadcaster.Broadcaster
@@ -72,9 +70,8 @@ func (f *FDB) Start(ctx context.Context) error {
 		return err
 	}
 
-	f.byRevision = kine.Sub("byRevision")
-	f.byKeyAndRevision = kine.Sub("byKeyAndRevision")
-	f.currentRevision = kine.Sub("currentRevision")
+	f.byRevision = CreateByRevisionSubspace(kine)
+	f.byKeyAndRevision = CreateByKeyRevisionSubspace(kine)
 
 	// See https://github.com/kubernetes/kubernetes/blob/442a69c3bdf6fe8e525b05887e57d89db1e2f3a5/staging/src/k8s.io/apiserver/pkg/storage/storagebackend/factory/etcd3.go#L97
 	if _, err := f.Create(ctx, "/registry/health", []byte(`{"health":"true"}`), 0); err != nil {

@@ -131,8 +131,6 @@
 [fdb] [PERF]    +Inf   [   0]
 ```
 
-
-
 ```
 fdb> status details
 

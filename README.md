@@ -24,8 +24,10 @@ docker container run \
     -e K3S_DATASTORE_ENDPOINT=http://127.0.0.1:2379 \
     docker.io/rancher/k3s:v1.29.4-k3s1 server \
     --kube-apiserver-arg=feature-gates=WatchList=true \
+    --kube-apiserver-arg=etcd-compaction-interval=10s \
     --disable=coredns,servicelb,traefik,local-storage,metrics-server \
-    --disable-network-policy
+    --disable-network-policy \
+    --flannel-iface=eth0
 ```
 
 3. Run kubectl
@@ -42,7 +44,6 @@ The implementation is in the `pkg/drivers/fdb` directory.
 ## TODO
 
 Here is a list of implementation details that need to be completed before starting scale testing of this implementation.
-- [ ] Current write amplification is x4. Reduce it to x2 by querying the previous value instead of storing it in the record.
 - [ ] Value size is limited to 100KiB. Extend the size to 10MiB (transaction size limit) https://apple.github.io/foundationdb/largeval.html
 - [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
 - [ ] Implement compaction
@@ -68,3 +69,8 @@ Here is a list of implementation details that need to be completed before starti
 - https://forums.foundationdb.org/t/versionstamp-vs-committedversion/600/5
 - https://forums.foundationdb.org/t/building-scalable-log-streaming-on-foundationdb/2781/10
 - https://github.com/richardartoul/tsdb-layer
+- https://github.com/k3s-io/kine/issues/311#issuecomment-2246257835
+- https://github.com/k3s-io/kine/issues/386#issuecomment-2552695321
+- https://github.com/apple/foundationdb/wiki/An-Overview-how-Watches-Work
+- https://forums.foundationdb.org/t/changefeeds-watching-and-getting-updates-on-ranges-of-keys/511/8
+
