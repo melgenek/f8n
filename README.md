@@ -44,6 +44,7 @@ The implementation is in the `pkg/drivers/fdb` directory.
 ## TODO
 
 Here is a list of implementation details that need to be completed before starting scale testing of this implementation.
+- [ ] implement `get` method in terms of a reverse range scan
 - [ ] Value size is limited to 100KiB. Extend the size to 10MiB (transaction size limit) https://apple.github.io/foundationdb/largeval.html
 - [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
 - [ ] Implement compaction
@@ -73,4 +74,16 @@ Here is a list of implementation details that need to be completed before starti
 - https://github.com/k3s-io/kine/issues/386#issuecomment-2552695321
 - https://github.com/apple/foundationdb/wiki/An-Overview-how-Watches-Work
 - https://forums.foundationdb.org/t/changefeeds-watching-and-getting-updates-on-ranges-of-keys/511/8
+- https://forums.foundationdb.org/t/go-lang-addreadconflictkey-addwriteconflictkey/1842/3
+- https://forums.foundationdb.org/t/api-for-transaction-size/1367/6
+- https://forums.foundationdb.org/t/transaction-size-limit-calculation/811/3
+- https://forums.foundationdb.org/t/foundationdb-read-performance/729/4
+- https://forums.foundationdb.org/t/getting-the-number-of-key-value-pairs/189/5
+- https://forums.foundationdb.org/t/large-range-scans-avoid-5s-limit/292/9
+- https://github.com/apple/foundationdb/blob/61fcce08cc9a894130c913ba8ca89963e93e6acc/bindings/java/src/main/com/apple/foundationdb/tuple/ByteArrayUtil.java#L364
+- https://forums.foundationdb.org/t/what-does-it-mean-transaction-is-retryable-in-particular-to-handle-error-of-transaction-too-old/1451/2
+- https://apple.github.io/foundationdb/developer-guide.html?highlight=retry%20loop#transaction-retry-loops
+- https://forums.foundationdb.org/t/layer-for-read-write-transactions-lasting-longer-than-5-seconds/1318/10
+- https://web.archive.org/web/20150325020408/http://community.foundationdb.com/questions/4118/future-version.html
+- 
 

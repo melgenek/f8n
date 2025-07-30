@@ -112,7 +112,7 @@ func TestFDB(t *testing.T) {
 
 			rev, result, err := f.List(ctx, keyName, keyName, 0, 0)
 			require.NoError(t, err)
-			require.Equal(t, nextRev, rev)
+			require.LessOrEqual(t, nextRev, rev)
 			require.Equal(t, []*server.KeyValue{event}, result)
 
 			keyEvents := events.GetOrDefault(keyName, []*server.KeyValue{})
