@@ -9,10 +9,6 @@ import (
 )
 
 func (f *FDB) Create(ctx context.Context, key string, value []byte, lease int64) (revRet int64, errRet error) {
-	defer func() {
-		logrus.Tracef("CREATE %s, size=%d, lease=%d => rev=%d, err=%v", key, len(value), lease, revRet, errRet)
-	}()
-
 	type Result struct {
 		revRet   interface{}
 		isFuture bool
@@ -69,14 +65,6 @@ func (f *FDB) Create(ctx context.Context, key string, value []byte, lease int64)
 }
 
 func (f *FDB) Update(ctx context.Context, key string, value []byte, revision, lease int64) (revRet int64, kvRet *server.KeyValue, updateRet bool, errRet error) {
-	defer func() {
-		kvRev := int64(0)
-		if kvRet != nil {
-			kvRev = kvRet.ModRevision
-		}
-		logrus.Tracef("UPDATE %s, value=%d, rev=%d, lease=%v => rev=%d, kvrev=%d, updated=%v, err=%v", key, len(value), revision, lease, revRet, kvRev, updateRet, errRet)
-	}()
-
 	type Result struct {
 		revRet    interface{}
 		isFuture  bool
@@ -135,10 +123,6 @@ func (f *FDB) Update(ctx context.Context, key string, value []byte, revision, le
 }
 
 func (f *FDB) Delete(ctx context.Context, key string, revision int64) (revRet int64, kvRet *server.KeyValue, deletedRet bool, errRet error) {
-	defer func() {
-		logrus.Tracef("DELETE %s, rev=%d => rev=%d, kv=%v, deleted=%v, err=%v", key, revision, revRet, kvRet != nil, deletedRet, errRet)
-	}()
-
 	type Result struct {
 		revRet     interface{}
 		isFuture   bool

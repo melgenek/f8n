@@ -5,7 +5,6 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
-	"github.com/sirupsen/logrus"
 	"strings"
 )
 
@@ -15,10 +14,6 @@ type RevResult struct {
 }
 
 func (f *FDB) List(ctx context.Context, prefix, startKey string, limit, revision int64) (revRet int64, kvRet []*server.KeyValue, errRet error) {
-	defer func() {
-		logrus.Tracef("LIST %s, start=%s, limit=%d, rev=%d => rev=%d, kvs=%v, err=%v", prefix, startKey, limit, revision, revRet, kvRet, errRet)
-	}()
-
 	rev, records, err := f.list(nil, prefix, startKey, limit, revision, false)
 	if err != nil {
 		return rev, nil, err
@@ -133,10 +128,6 @@ func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevis
 }
 
 func (f *FDB) Get(ctx context.Context, key, rangeEnd string, limit, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
-	defer func() {
-		logrus.Tracef("GET %s, rev=%d => rev=%d, kv=%v, err=%v", key, revision, revRet, kvRet != nil, errRet)
-	}()
-
 	rev, revRecord, err := f.get(nil, key, rangeEnd, limit, revision, false)
 	if revRecord == nil {
 		return rev, nil, err
@@ -156,9 +147,6 @@ func (f *FDB) get(tr *fdb.Transaction, key, rangeEnd string, limit, revision int
 }
 
 func (f *FDB) Count(ctx context.Context, prefix, startKey string, revision int64) (revRet int64, count int64, err error) {
-	defer func() {
-		logrus.Tracef("COUNT %s, rev=%d => rev=%d, count=%d, err=%v", prefix, revision, revRet, count, err)
-	}()
 	rev, events, err := f.list(nil, prefix, startKey, 0, revision, false)
 	if err != nil {
 		return 0, 0, err

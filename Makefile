@@ -44,7 +44,7 @@ test-sqlite:
 .PHONY: test-fdb
 #test-fdb: build build-test
 test-fdb:
-	docker run -i -e ARCH -e REPO -e TAG  -e DRONE_TAG -e IMAGE_NAME \
+	docker run --rm -i -e ARCH -e REPO -e TAG  -e DRONE_TAG -e IMAGE_NAME \
     -v /var/run/docker.sock:/var/run/docker.sock -v kine-cache:/go/src/github.com/k3s-io/kine/.cache \
     -v /tmp:/tmp \
     --network=host \

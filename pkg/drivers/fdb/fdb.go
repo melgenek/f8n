@@ -8,6 +8,7 @@ import (
 	"github.com/k3s-io/kine/pkg/drivers"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
+	"time"
 )
 
 var (
@@ -35,9 +36,12 @@ type FDB struct {
 	ctx         context.Context
 }
 
-func NewFdbStructured(connectionString string) *FDB {
-	return &FDB{
-		connectionString: connectionString,
+func NewFdbStructured(connectionString string) server.Backend {
+	return &FdbLogger{
+		backend: &FDB{
+			connectionString: connectionString,
+		},
+		threshold: 500 * time.Millisecond,
 	}
 }
 
