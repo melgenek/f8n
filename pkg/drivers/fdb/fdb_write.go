@@ -61,10 +61,6 @@ func (f *FDB) Create(ctx context.Context, key string, value []byte, lease int64)
 			return 0, err
 		}
 		rev = versionstampBytesToInt64(revisionKey)
-		select {
-		case f.triggerWatch <- rev:
-		default:
-		}
 	} else {
 		rev = castedRes.revRet.(int64)
 	}
@@ -131,10 +127,6 @@ func (f *FDB) Update(ctx context.Context, key string, value []byte, revision, le
 		}
 		rev = versionstampBytesToInt64(revisionKey)
 		castedRes.kvRet.ModRevision = rev
-		select {
-		case f.triggerWatch <- rev:
-		default:
-		}
 	} else {
 		rev = castedRes.revRet.(int64)
 	}
@@ -201,10 +193,6 @@ func (f *FDB) Delete(ctx context.Context, key string, revision int64) (revRet in
 		}
 		rev = versionstampBytesToInt64(revisionKey)
 		castedRes.kvRet.ModRevision = rev
-		select {
-		case f.triggerWatch <- rev:
-		default:
-		}
 	} else {
 		rev = castedRes.revRet.(int64)
 	}
@@ -219,6 +207,10 @@ func (f *FDB) append(tr *fdb.Transaction, record *Record) (retRev fdb.FutureKey,
 	}
 
 	if err := f.byKeyAndRevision.Write(tr, &KeyAndRevision{Key: record.Key, Rev: newRev}, record); err != nil {
+		return nil, err
+	}
+
+	if err := f.watch.Write(tr); err != nil {
 		return nil, err
 	}
 

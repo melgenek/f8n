@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
-	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/broadcaster"
 	"github.com/k3s-io/kine/pkg/drivers"
 	"github.com/k3s-io/kine/pkg/server"
@@ -12,7 +11,7 @@ import (
 )
 
 var (
-	_ server.Backend = (&FDB{})
+	_ server.Backend = &FDB{}
 )
 
 func New(ctx context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
@@ -28,18 +27,17 @@ type FDB struct {
 	db               fdb.Database
 	kine             directory.DirectorySubspace
 
-	byRevision       Subspace[tuple.Versionstamp, string]
-	byKeyAndRevision Subspace[*KeyAndRevision, *Record]
+	byRevision       *ByRevisionSubspace
+	byKeyAndRevision *ByKeyAndRevisionSubspace
+	watch            *WatchSubspace
 
-	triggerWatch chan int64
-	broadcaster  broadcaster.Broadcaster
-	ctx          context.Context
+	broadcaster broadcaster.Broadcaster
+	ctx         context.Context
 }
 
 func NewFdbStructured(connectionString string) *FDB {
 	return &FDB{
 		connectionString: connectionString,
-		triggerWatch:     make(chan int64, 1024),
 	}
 }
 
@@ -72,6 +70,7 @@ func (f *FDB) Start(ctx context.Context) error {
 
 	f.byRevision = CreateByRevisionSubspace(kine)
 	f.byKeyAndRevision = CreateByKeyRevisionSubspace(kine)
+	f.watch = CreateWatchSubspace(kine)
 
 	// See https://github.com/kubernetes/kubernetes/blob/442a69c3bdf6fe8e525b05887e57d89db1e2f3a5/staging/src/k8s.io/apiserver/pkg/storage/storagebackend/factory/etcd3.go#L97
 	if _, err := f.Create(ctx, "/registry/health", []byte(`{"health":"true"}`), 0); err != nil {

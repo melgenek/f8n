@@ -6,10 +6,11 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
-	"math"
 	"strings"
-	"time"
 )
+
+// https://github.com/etcd-io/etcd/blob/f072712e29a2dafc92e7cfb3c76cea60e0d508b2/server/storage/mvcc/watcher_group.go#L28
+const maxBatchSize = 1000
 
 type AfterResult struct {
 	currentRevision int64
@@ -107,33 +108,33 @@ func (f *FDB) startWatch() (chan interface{}, error) {
 func (f *FDB) poll(result chan interface{}, pollStart int64) {
 	currentRev := pollStart
 
-	lastBatchSize := math.MaxInt
-
-	wait := time.NewTicker(100 * time.Millisecond)
-	defer wait.Stop()
 	defer close(result)
 
 	for {
-		if lastBatchSize < 100 {
-			select {
-			case <-f.ctx.Done():
-				return
-			case check := <-f.triggerWatch:
-				if check <= currentRev {
-					continue
-				}
-			case <-wait.C:
-			}
+		select {
+		case <-f.ctx.Done():
+			return
+		default:
 		}
 
-		_, events, err := f.after("/", currentRev, 500)
-		if err != nil || len(events) == 0 {
-			continue
+		watchFuture, _ := f.db.Transact(func(tr fdb.Transaction) (interface{}, error) {
+			return f.watch.Watch(&tr), nil
+		})
+
+		var newRev int64
+		var events []*server.Event
+		var err error
+		for newRev, events, err = f.after("/", currentRev, maxBatchSize); err != nil; {
+			logrus.Errorf("Error in 'after' err=%v", err)
 		}
 
-		currentRev = events[len(events)-1].KV.ModRevision
-		lastBatchSize = len(events)
-		result <- events
+		currentRev = newRev
+		if len(events) > 0 {
+			result <- events
+			watchFuture.(fdb.FutureNil).Cancel()
+		} else if err := watchFuture.(fdb.FutureNil).Get(); err != nil {
+			logrus.Errorf("Error waiting for a watch err=%v", err)
+		}
 	}
 }
 

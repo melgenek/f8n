@@ -7,8 +7,6 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 )
 
-var _ Subspace[*KeyAndRevision, *Record] = (*ByKeyAndRevisionSubspace)(nil)
-
 type KeyAndRevision struct {
 	Key string
 	Rev tuple.Versionstamp

@@ -1,11 +1,11 @@
 ```
 [fdb] [PERF]    
 [fdb] [PERF]    0.004  average fdb request duration (seconds): create configmaps
-[fdb] [PERF]    0.005  [3699]  ██████████████████████████████████████████████████
-[fdb] [PERF]    0.025  [1725]  ███████████████████████▍
-[fdb] [PERF]    0.05   [   1]
-[fdb] [PERF]    0.1    [   0]
-[fdb] [PERF]    0.2    [   3]
+[fdb] [PERF]    0.005  [3727]  ██████████████████████████████████████████████████
+[fdb] [PERF]    0.025  [1768]  ███████████████████████▊
+[fdb] [PERF]    0.05   [   0]
+[fdb] [PERF]    0.1    [   1]
+[fdb] [PERF]    0.2    [   1]
 [fdb] [PERF]    0.4    [   3]
 [fdb] [PERF]    0.6    [   0]
 [fdb] [PERF]    0.8    [   0]
@@ -27,12 +27,12 @@
 [fdb] [PERF]    +Inf   [   0]
 [fdb] [PERF]    
 [fdb] [PERF]    0.009  average fdb request duration (seconds): delete configmaps
-[fdb] [PERF]    0.005  [   3]  ▏
-[fdb] [PERF]    0.025  [1598]  ██████████████████████████████████████████████████
-[fdb] [PERF]    0.05   [   0]
-[fdb] [PERF]    0.1    [   2]  ▏
-[fdb] [PERF]    0.2    [   0]
-[fdb] [PERF]    0.4    [   2]  ▏
+[fdb] [PERF]    0.005  [   4]  ▏
+[fdb] [PERF]    0.025  [1647]  ██████████████████████████████████████████████████
+[fdb] [PERF]    0.05   [   1]
+[fdb] [PERF]    0.1    [   0]
+[fdb] [PERF]    0.2    [   4]  ▏
+[fdb] [PERF]    0.4    [   1]
 [fdb] [PERF]    0.6    [   0]
 [fdb] [PERF]    0.8    [   0]
 [fdb] [PERF]    1      [   0]
@@ -53,9 +53,9 @@
 [fdb] [PERF]    +Inf   [   0]
 [fdb] [PERF]    
 [fdb] [PERF]    0.002  average fdb request duration (seconds): get configmaps
-[fdb] [PERF]    0.005  [17730]  ██████████████████████████████████████████████████
-[fdb] [PERF]    0.025  [  154]  ▍
-[fdb] [PERF]    0.05   [    1]
+[fdb] [PERF]    0.005  [17617]  ██████████████████████████████████████████████████
+[fdb] [PERF]    0.025  [  234]  ▋
+[fdb] [PERF]    0.05   [    0]
 [fdb] [PERF]    0.1    [    0]
 [fdb] [PERF]    0.2    [    0]
 [fdb] [PERF]    0.4    [    0]
@@ -79,11 +79,11 @@
 [fdb] [PERF]    +Inf   [    0]
 [fdb] [PERF]    
 [fdb] [PERF]    0.037  average fdb request duration (seconds): list configmaps
-[fdb] [PERF]    0.005  [ 75]  ██████▉
-[fdb] [PERF]    0.025  [548]  ██████████████████████████████████████████████████
-[fdb] [PERF]    0.05   [474]  ███████████████████████████████████████████▎
-[fdb] [PERF]    0.1    [498]  █████████████████████████████████████████████▌
-[fdb] [PERF]    0.2    [  5]  ▌
+[fdb] [PERF]    0.005  [ 79]  ███████▋
+[fdb] [PERF]    0.025  [515]  █████████████████████████████████████████████████▊
+[fdb] [PERF]    0.05   [443]  ██████████████████████████████████████████▊
+[fdb] [PERF]    0.1    [518]  ██████████████████████████████████████████████████
+[fdb] [PERF]    0.2    [  2]  ▎
 [fdb] [PERF]    0.4    [  0]
 [fdb] [PERF]    0.6    [  0]
 [fdb] [PERF]    0.8    [  0]
@@ -105,12 +105,12 @@
 [fdb] [PERF]    +Inf   [  0]
 [fdb] [PERF]    
 [fdb] [PERF]    0.009  average fdb request duration (seconds): update configmaps
-[fdb] [PERF]    0.005  [  38]  ▎
-[fdb] [PERF]    0.025  [6972]  ██████████████████████████████████████████████████
-[fdb] [PERF]    0.05   [   3]
+[fdb] [PERF]    0.005  [  82]  ▋
+[fdb] [PERF]    0.025  [7003]  ██████████████████████████████████████████████████
+[fdb] [PERF]    0.05   [   1]
 [fdb] [PERF]    0.1    [   4]
-[fdb] [PERF]    0.2    [   8]
-[fdb] [PERF]    0.4    [   6]
+[fdb] [PERF]    0.2    [   9]  ▏
+[fdb] [PERF]    0.4    [   4]
 [fdb] [PERF]    0.6    [   0]
 [fdb] [PERF]    0.8    [   0]
 [fdb] [PERF]    1      [   0]
@@ -154,23 +154,23 @@ Cluster:
   Machines               - 1
   Memory availability    - 8.0 GB per process on machine with least available
   Fault Tolerance        - 0 machines
-  Server time            - 08/01/25 23:18:29
+  Server time            - 08/02/25 12:19:51
 
 Data:
   Replication health     - Healthy
   Moving data            - 0.000 GB
-  Sum of key-value sizes - 19 MB
+  Sum of key-value sizes - 31 MB
   Disk space used        - 594 MB
 
 Operating space:
   Storage server         - 0.9 GB free on most full server
-  Log server             - 769.3 GB free on most full server
+  Log server             - 768.2 GB free on most full server
 
 Workload:
-  Read rate              - 5792 Hz
-  Write rate             - 233 Hz
-  Transactions started   - 528 Hz
-  Transactions committed - 117 Hz
+  Read rate              - 6215 Hz
+  Write rate             - 355 Hz
+  Transactions started   - 697 Hz
+  Transactions committed - 120 Hz
   Conflict rate          - 1 Hz
 
 Backup and DR:
@@ -178,10 +178,10 @@ Backup and DR:
   Running DRs            - 0
 
 Process performance details:
-  127.0.0.1:4689         ( 22% cpu; 23% machine; 0.000 Gbps;  2% disk IO; 0.5 GB / 8.0 GB RAM  )
+  127.0.0.1:4689         ( 41% cpu; 46% machine; 0.000 Gbps;  5% disk IO; 0.5 GB / 8.0 GB RAM  )
 
 Coordination servers:
   127.0.0.1:4689  (reachable)
 
-Client time: 08/01/25 23:18:29
+Client time: 08/02/25 12:19:51
 ```

@@ -136,7 +136,7 @@ def update_configmap():
         return
     i = random.choice(list(configmaps.keys()))
     j = random.randint(0, 99)
-    k = random.randint(1, 16) * 256
+    k = 50
     cm = configmaps[i]
     if not cm.data:
         cm.data = dict()

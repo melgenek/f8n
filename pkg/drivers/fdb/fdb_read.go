@@ -129,10 +129,6 @@ func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevis
 		return revResult.currentRevision, nil, server.ErrFutureRev
 	}
 
-	select {
-	case f.triggerWatch <- revResult.currentRevision:
-	default:
-	}
 	return revResult.currentRevision, revResult.revRecords, nil
 }
 

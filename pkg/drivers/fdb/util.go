@@ -6,16 +6,6 @@ import (
 	"github.com/k3s-io/kine/pkg/server"
 )
 
-func eventToRecord(event *server.Event) *Record {
-	return &Record{
-		Key:      event.KV.Key,
-		IsCreate: event.Create,
-		IsDelete: event.Delete,
-		Lease:    event.KV.Lease,
-		Value:    event.KV.Value,
-	}
-}
-
 func revRecordToEvent(revRecord *RevRecord) *server.Event {
 	event := &server.Event{
 		Create: revRecord.Record.IsCreate,
