@@ -184,7 +184,7 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.E
 			}
 		}
 
-		rev, err := f.getCurrentRevision(tr)
+		rev, err := tr.GetReadVersion().Get()
 		if err != nil {
 			return nil, err
 		}

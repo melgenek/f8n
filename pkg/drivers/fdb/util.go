@@ -2,6 +2,7 @@ package fdb
 
 import (
 	"encoding/binary"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 )
@@ -54,3 +55,15 @@ func createStubVersionstamp() tuple.Versionstamp {
 	}
 	return versionstamp
 }
+
+var zeroFuture fdb.FutureInt64 = ConstInt64Future{0}
+
+type ConstInt64Future struct {
+	value int64
+}
+
+func (f ConstInt64Future) Get() (int64, error) { return f.value, nil }
+func (f ConstInt64Future) MustGet() int64      { return f.value }
+func (f ConstInt64Future) BlockUntilReady()    {}
+func (f ConstInt64Future) IsReady() bool       { return true }
+func (f ConstInt64Future) Cancel()             {}

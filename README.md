@@ -86,5 +86,7 @@ Here is a list of implementation details that need to be completed before starti
 - https://forums.foundationdb.org/t/layer-for-read-write-transactions-lasting-longer-than-5-seconds/1318/10
 - https://web.archive.org/web/20150325020408/http://community.foundationdb.com/questions/4118/future-version.html
 - https://forums.foundationdb.org/t/read-only-transactions/3412
+- https://github.com/apple/foundationdb/wiki/Difference-between-snapshot-reads-and-regular-reads
+- https://forums.foundationdb.org/t/use-of-setreadversion/3696/2
 - 
 

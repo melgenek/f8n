@@ -114,7 +114,7 @@ func (b *FdbLogger) CurrentRevision(ctx context.Context) (revRet int64, errRet e
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "CURRENT_REV %s => rev=%d, err=%v, duration=%s"
+		fStr := "CURRENT_REV => revRet=%d, err=%v, duration=%s"
 		b.logMethod(dur, fStr, revRet, errRet, dur)
 	}()
 	return b.backend.CurrentRevision(ctx)

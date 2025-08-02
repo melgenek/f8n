@@ -101,7 +101,7 @@ func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevis
 			result = append(result, candidateRecord)
 		}
 
-		if rev, err := f.getCurrentRevision(tr); err != nil {
+		if rev, err := tr.GetReadVersion().Get(); err != nil {
 			return nil, err
 		} else {
 			return &RevResult{currentRevision: rev, revRecords: result}, nil
@@ -146,6 +146,25 @@ func (f *FDB) get(tr *fdb.Transaction, key, rangeEnd string, limit, revision int
 	return rev, events[0], nil
 }
 
+func (f *FDB) getLast(tr *fdb.Transaction, key string) (*RevRecord, error) {
+	keyRange := f.byKeyAndRevision.GetSubspace().Sub(key)
+	it := tr.GetRange(keyRange, fdb.RangeOptions{Limit: 1, Mode: fdb.StreamingModeExact, Reverse: true}).Iterator()
+
+	if it.Advance() {
+		kv, err := it.Get()
+		if err != nil {
+			return nil, err
+		}
+		recordKey, recordValue, err := f.byKeyAndRevision.ParseKV(kv)
+		if err != nil {
+			return nil, err
+		}
+		return &RevRecord{Rev: recordKey.Rev, Record: recordValue}, err
+	} else {
+		return nil, nil
+	}
+}
+
 func (f *FDB) Count(ctx context.Context, prefix, startKey string, revision int64) (revRet int64, count int64, err error) {
 	rev, events, err := f.list(nil, prefix, startKey, 0, revision, false)
 	if err != nil {
@@ -157,11 +176,7 @@ func (f *FDB) Count(ctx context.Context, prefix, startKey string, revision int64
 
 func (f *FDB) CurrentRevision(ctx context.Context) (int64, error) {
 	key, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-		return f.getCurrentRevision(tr)
+		return tr.GetReadVersion().Get()
 	})
 	return key.(int64), err
-}
-
-func (f *FDB) getCurrentRevision(tr fdb.Transaction) (int64, error) {
-	return tr.GetReadVersion().Get()
 }
