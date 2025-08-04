@@ -15,7 +15,7 @@ var (
 	_ server.Backend = &FDB{}
 )
 
-func New(ctx context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
+func New(_ context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
 	return false, NewFdbStructured(cfg.DataSourceName), nil
 }
 

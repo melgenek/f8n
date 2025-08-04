@@ -35,6 +35,7 @@ test-conformance() {
 test-conformance
 
 # -e "E2E_FOCUS=should\snot\sbe\sblocked\sby\sdependency\scircle" \
+# -e "E2E_FOCUS=should\scontain\sOpenAPI\sV3\sfor\sAggregated\sAPIServer" \
 
 
 #docker container run \

@@ -38,8 +38,8 @@ func (b *FdbLogger) Get(ctx context.Context, key, rangeEnd string, limit, revisi
 		if kvRet != nil {
 			size = len(kvRet.Value)
 		}
-		fStr := "GET %s, rev=%d => revRet=%d, kv=%v, size=%d, err=%v, duration=%s"
-		b.logMethod(dur, fStr, key, revision, revRet, kvRet != nil, size, errRet, dur)
+		fStr := "GET %s, rangeEnd=%s rev=%d => revRet=%d, kv=%v, size=%d, err=%v, duration=%s"
+		b.logMethod(dur, fStr, key, rangeEnd, revision, revRet, kvRet != nil, size, errRet, dur)
 	}()
 
 	return b.backend.Get(ctx, key, rangeEnd, limit, revision)
@@ -50,10 +50,21 @@ func (b *FdbLogger) Create(ctx context.Context, key string, value []byte, lease 
 	defer func() {
 		dur := time.Since(start)
 		fStr := "CREATE %s, size=%d, lease=%d => rev=%d, err=%v, duration=%s"
-		b.logMethod(dur, fStr, key, len(value), lease, revRet, errRet, dur)
+		b.logMethod(10000*time.Millisecond, fStr, key, len(value), lease, revRet, errRet, dur)
 	}()
 
 	return b.backend.Create(ctx, key, value, lease)
+}
+
+func (b *FdbLogger) Update(ctx context.Context, key string, value []byte, revision, lease int64) (revRet int64, kvRet *server.KeyValue, updateRet bool, errRet error) {
+	start := time.Now()
+	defer func() {
+		dur := time.Since(start)
+		fStr := "UPDATE %s, value=%d, rev=%d, lease=%v => rev=%d, updated=%v, err=%v, duration=%s"
+		b.logMethod(1000*time.Millisecond, fStr, key, len(value), revision, lease, revRet, updateRet, errRet, dur)
+	}()
+
+	return b.backend.Update(ctx, key, value, revision, lease)
 }
 
 func (b *FdbLogger) Delete(ctx context.Context, key string, revision int64) (revRet int64, kvRet *server.KeyValue, deletedRet bool, errRet error) {
@@ -61,7 +72,7 @@ func (b *FdbLogger) Delete(ctx context.Context, key string, revision int64) (rev
 	defer func() {
 		dur := time.Since(start)
 		fStr := "DELETE %s, rev=%d => rev=%d, kv=%v, deleted=%v, err=%v, duration=%s"
-		b.logMethod(dur, fStr, key, revision, revRet, kvRet != nil, deletedRet, errRet, dur)
+		b.logMethod(1000*time.Millisecond, fStr, key, revision, revRet, kvRet != nil, deletedRet, errRet, dur)
 	}()
 
 	return b.backend.Delete(ctx, key, revision)
@@ -87,17 +98,6 @@ func (b *FdbLogger) Count(ctx context.Context, prefix, startKey string, revision
 	}()
 
 	return b.backend.Count(ctx, prefix, startKey, revision)
-}
-
-func (b *FdbLogger) Update(ctx context.Context, key string, value []byte, revision, lease int64) (revRet int64, kvRet *server.KeyValue, updateRet bool, errRet error) {
-	start := time.Now()
-	defer func() {
-		dur := time.Since(start)
-		fStr := "UPDATE %s, value=%d, rev=%d, lease=%v => rev=%d, updated=%v, err=%v, duration=%s"
-		b.logMethod(dur, fStr, key, len(value), revision, lease, revRet, updateRet, errRet, dur)
-	}()
-
-	return b.backend.Update(ctx, key, value, revision, lease)
 }
 
 func (b *FdbLogger) Watch(ctx context.Context, prefix string, revision int64) server.WatchResult {

@@ -41,11 +41,12 @@ func versionstampToInt64(versionstamp tuple.Versionstamp) int64 {
 }
 
 func int64ToVersionstamp(minRevision int64) tuple.Versionstamp {
-	beginVersionstamp := tuple.IncompleteVersionstamp(0xFFFF)
+	beginVersionstamp := lastVersionstamp
 	binary.BigEndian.PutUint64(beginVersionstamp.TransactionVersion[:], uint64(minRevision))
 	return beginVersionstamp
 }
 
+var lastVersionstamp = tuple.IncompleteVersionstamp(0xFFFF)
 var stubVersionstamp = createStubVersionstamp()
 
 func createStubVersionstamp() tuple.Versionstamp {

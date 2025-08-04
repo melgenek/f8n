@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	logrus.SetLevel(logrus.TraceLevel)
+	logrus.SetLevel(logrus.WarnLevel)
 	app := app.New()
 	if err := app.Run(os.Args); err != nil {
 		if !errors.Is(err, context.Canceled) {

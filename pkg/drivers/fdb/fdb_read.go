@@ -2,9 +2,11 @@ package fdb
 
 import (
 	"context"
+	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
+	"github.com/sirupsen/logrus"
 	"strings"
 )
 
@@ -13,22 +15,12 @@ type RevResult struct {
 	revRecords      []*RevRecord
 }
 
-func (f *FDB) List(ctx context.Context, prefix, startKey string, limit, revision int64) (revRet int64, kvRet []*server.KeyValue, errRet error) {
-	rev, records, err := f.list(nil, prefix, startKey, limit, revision, false)
+func (f *FDB) List(_ context.Context, prefix, startKey string, limit, revision int64) (revRet int64, kvRet []*server.KeyValue, errRet error) {
+	rev, records, err := f.list("List", prefix, startKey, limit, revision)
 	if err != nil {
 		return rev, nil, err
 	}
-	if revision == 0 && len(records) == 0 {
-		// if no revision is requested and no revRecords are returned, then
-		// get the current revision and relist.  Relist is required because
-		// between now and getting the current revision something could have
-		// been created.
-		currentRev, err := f.CurrentRevision(ctx)
-		if err != nil {
-			return currentRev, nil, err
-		}
-		return f.List(ctx, prefix, startKey, limit, currentRev)
-	} else if revision != 0 {
+	if revision != 0 {
 		rev = revision
 	}
 
@@ -40,36 +32,57 @@ func (f *FDB) List(ctx context.Context, prefix, startKey string, limit, revision
 	return rev, kvs, nil
 }
 
-func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevision int64, includeDeletes bool) (resRev int64, resEvents []*RevRecord, resErr error) {
-	//  Examples:
-	//  prefix=/bootstrap/, startKey=/bootstrap
-	//  prefix=/bootstrap/abcd, startKey=/bootstrap/abcd
-	//  prefix=/registry/secrets/, startKey=/registry/secrets/
-	//  prefix=/registry/ranges/servicenodeports, startKey=""
-	//  prefix=/, startKey=/registry/health
-	//  prefix=/registry/podtemplates/chunking-6414/, startKey=/registry/podtemplates/chunking-6414/template-0016
+func (f *FDB) list(caller, prefix, startKey string, limit, maxRevision int64) (resRev int64, resEvents []*RevRecord, resErr error) {
+	// Examples:
+	// prefix=/bootstrap/, startKey=/bootstrap
+	// prefix=/registry/secrets/, startKey=/registry/secrets/
+	// prefix=/, startKey=/registry/health
+	// prefix=/registry/health, startKey=/registry/health
+	// prefix=/registry/ranges/serviceips, startKey=/registry/ranges/serviceips
+	// prefix=/registry/podtemplates/chunking-6414/, startKey=/registry/podtemplates/chunking-6414/template-0016
+	// prefix=/registry/masterleases/172.17.0.2, startKey=/registry/masterleases/172.17.0.2
+	// prefix=/registry/clusterroles/system:aggregate-to-edit, startKey=/registry/clusterroles/system:aggregate-to-edit
 
-	keyPrefix := f.byKeyAndRevision.GetSubspace().Pack(tuple.Tuple{prefix})
+	defer func() {
+		logrus.Errorf("list (%s): prefix=%s, startKey=%s, limit=%d, maxRevision=%d => resRev=%d resEventsCount=%d resErr=%v", caller, prefix, startKey, limit, maxRevision, resRev, len(resEvents), resErr)
+	}()
+
+	var begin, end fdb.Selectable
 	if strings.HasSuffix(prefix, "/") {
-		// Removing 0x00 from the string encoding in the tuple to have a prefixed search
-		// https://forums.foundationdb.org/t/ranges-without-explicit-end-go/773/2
-		keyPrefix = keyPrefix[:len(keyPrefix)-1]
-
-		// Searching for equality
-		if prefix == startKey {
-			startKey = ""
+		// searching for prefix
+		packedStartKey := f.byKeyAndRevision.GetSubspace().Pack(tuple.Tuple{startKey})
+		if prefix != startKey {
+			// next key after the packedStartKey
+			packedStartKeyKey, err := fdb.Strinc(packedStartKey)
+			if err != nil {
+				return 0, nil, fmt.Errorf("failed to create begin for list: %w", err)
+			}
+			packedStartKey = packedStartKeyKey
+		} else {
+			// searching for equality
 		}
+		begin = fdb.FirstGreaterOrEqual(packedStartKey)
+
+		packedPrefix := f.byKeyAndRevision.GetSubspace().Pack(tuple.Tuple{prefix})
+		// Removing the last 0x00 from the string encoding in the tuple to have a prefixed search
+		// https://forums.foundationdb.org/t/ranges-without-explicit-end-go/773/2
+		packedPrefixKey, err := fdb.Strinc(packedPrefix[:len(packedPrefix)-1])
+		// err is always not nil, because tuple string is encoded as '0x02{string}0x00'
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to create end for list: %w", err)
+		}
+		// the last key is exclusive https://forums.foundationdb.org/t/cant-get-last-pair-in-fdbkeyvalue-array/1252/2
+		end = fdb.FirstGreaterOrEqual(fdb.Key(packedPrefixKey))
+	} else if startKey != prefix {
+		return 0, nil, fmt.Errorf("prefix is not equal to startKey. Prefix: %s, startKey: %s", prefix, startKey)
 	} else {
-		// Searching for equality
-		startKey = ""
+		// searching for equality
+		k := f.byKeyAndRevision.GetSubspace().Sub(prefix)
+		begin, end = k.FDBRangeKeySelectors()
 	}
 
-	exec := func(tr fdb.Transaction) (interface{}, error) {
-		keysToRevisionsRange, err := fdb.PrefixRange(keyPrefix)
-		if err != nil {
-			return nil, err
-		}
-		it := tr.GetRange(keysToRevisionsRange, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
+	result, err := f.db.Transact(func(tr fdb.Transaction) (interface{}, error) {
+		it := tr.GetRange(fdb.SelectorRange{Begin: begin, End: end}, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
 
 		result := make([]*RevRecord, 0, limit)
 
@@ -80,24 +93,24 @@ func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevis
 				return nil, err
 			}
 
-			newRecordKey, newRecord, err := f.byKeyAndRevision.ParseKV(kv)
+			nextRecordKey, nextRecord, err := f.byKeyAndRevision.ParseKV(kv)
 			if err != nil {
 				return nil, err
 			}
 
-			if candidateRecord != nil && candidateRecord.Record.Key != newRecord.Key {
-				if !candidateRecord.Record.IsDelete || includeDeletes {
+			if candidateRecord != nil && candidateRecord.Record.Key != nextRecord.Key {
+				if !candidateRecord.Record.IsDelete {
 					result = append(result, candidateRecord)
 				}
 				candidateRecord = nil
 			}
 
-			if (maxRevision == 0 || versionstampToInt64(newRecordKey.Rev) <= maxRevision) && newRecord.Key > startKey {
-				candidateRecord = &RevRecord{Rev: newRecordKey.Rev, Record: newRecord}
+			if maxRevision == 0 || versionstampToInt64(nextRecordKey.Rev) <= maxRevision {
+				candidateRecord = &RevRecord{Rev: nextRecordKey.Rev, Record: nextRecord}
 			}
 		}
 
-		if candidateRecord != nil && (!candidateRecord.Record.IsDelete || includeDeletes) {
+		if candidateRecord != nil && !candidateRecord.Record.IsDelete {
 			result = append(result, candidateRecord)
 		}
 
@@ -106,15 +119,7 @@ func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevis
 		} else {
 			return &RevResult{currentRevision: rev, revRecords: result}, nil
 		}
-	}
-
-	var result interface{}
-	var err error
-	if tr != nil {
-		result, err = exec(*tr)
-	} else {
-		result, err = f.db.Transact(exec)
-	}
+	})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -127,23 +132,21 @@ func (f *FDB) list(tr *fdb.Transaction, prefix, startKey string, limit, maxRevis
 	return revResult.currentRevision, revResult.revRecords, nil
 }
 
-func (f *FDB) Get(ctx context.Context, key, rangeEnd string, limit, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
-	rev, revRecord, err := f.get(nil, key, rangeEnd, limit, revision, false)
-	if revRecord == nil {
-		return rev, nil, err
+func (f *FDB) Get(_ context.Context, key, rangeEnd string, limit, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
+	if rangeEnd != "" {
+		return 0, nil, fmt.Errorf("invalid 'rangeEnd' for Get. Expected: '', got %s", rangeEnd)
 	}
-	return rev, revRecordToEvent(revRecord).KV, err
-}
-
-func (f *FDB) get(tr *fdb.Transaction, key, rangeEnd string, limit, revision int64, includeDeletes bool) (int64, *RevRecord, error) {
-	rev, events, err := f.list(tr, key, rangeEnd, limit, revision, includeDeletes)
+	if limit != 1 {
+		logrus.Tracef("Get request got `limit != 1`. Key: %s, rangeEnd=%s, limit=%d, rev=%d", key, rangeEnd, limit, revision)
+	}
+	rev, events, err := f.list("Get", key, key, 1, revision)
 	if err != nil {
 		return 0, nil, err
 	}
 	if len(events) == 0 {
 		return rev, nil, nil
 	}
-	return rev, events[0], nil
+	return rev, revRecordToEvent(events[0]).KV, nil
 }
 
 func (f *FDB) getLast(tr *fdb.Transaction, key string) (*RevRecord, error) {
@@ -165,8 +168,8 @@ func (f *FDB) getLast(tr *fdb.Transaction, key string) (*RevRecord, error) {
 	}
 }
 
-func (f *FDB) Count(ctx context.Context, prefix, startKey string, revision int64) (revRet int64, count int64, err error) {
-	rev, events, err := f.list(nil, prefix, startKey, 0, revision, false)
+func (f *FDB) Count(_ context.Context, prefix, startKey string, revision int64) (revRet int64, count int64, err error) {
+	rev, events, err := f.list("Count", prefix, startKey, 0, revision)
 	if err != nil {
 		return 0, 0, err
 	} else {
@@ -174,7 +177,7 @@ func (f *FDB) Count(ctx context.Context, prefix, startKey string, revision int64
 	}
 }
 
-func (f *FDB) CurrentRevision(ctx context.Context) (int64, error) {
+func (f *FDB) CurrentRevision(_ context.Context) (int64, error) {
 	key, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
 		return tr.GetReadVersion().Get()
 	})

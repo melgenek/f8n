@@ -25,7 +25,7 @@ docker container run \
     docker.io/rancher/k3s:v1.29.4-k3s1 server \
     --kube-apiserver-arg=feature-gates=WatchList=true \
     --kube-apiserver-arg=etcd-compaction-interval=10s \
-    --disable=coredns,servicelb,traefik,local-storage,metrics-server \
+    --disable=servicelb,traefik,local-storage,metrics-server \
     --disable-network-policy \
     --flannel-iface=eth0
 ```

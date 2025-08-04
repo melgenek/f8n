@@ -27,6 +27,14 @@ func TestFDB(t *testing.T) {
 	watchAll := f.Watch(ctx, "/abc/", 0)
 	watchKey := f.Watch(ctx, fmt.Sprintf("/abc/key%04d", n-1), 0)
 
+	_, result, err := f.List(ctx, "/", "/registry/health", 0, 0)
+	require.NoError(t, err)
+	require.Empty(t, result)
+
+	_, result, err = f.List(ctx, "/registry/health", "/registry/health", 0, 0)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
 	events := orderedmap.NewOrderedMap[string, []*server.KeyValue]()
 	history := make([]*server.Event, 0)
 
@@ -45,7 +53,7 @@ func TestFDB(t *testing.T) {
 	history = append(history, &server.Event{Delete: false, Create: true, KV: event})
 	currentRev := nextRev
 
-	_, result, err := f.List(ctx, "/abc/l/", "/abc/l/", 0, currentRev)
+	_, result, err = f.List(ctx, "/abc/l/", "/abc/l/", 0, currentRev)
 	require.NoError(t, err)
 	require.Equal(t, valuesAsSlice(events), result)
 
@@ -115,6 +123,10 @@ func TestFDB(t *testing.T) {
 			require.LessOrEqual(t, nextRev, rev)
 			require.Equal(t, []*server.KeyValue{event}, result)
 
+			rev, result, err = f.List(ctx, "/", keyName, 0, 0)
+			require.NoError(t, err)
+			require.NotContains(t, result, event)
+
 			keyEvents := events.GetOrDefault(keyName, []*server.KeyValue{})
 			var prevKv *server.KeyValue
 			if j != 0 {
@@ -129,10 +141,18 @@ func TestFDB(t *testing.T) {
 			require.Equal(t, valuesAsSlice(events), result)
 			require.Equal(t, currentRev, rev)
 
+			_, result, err = f.List(ctx, "/abc/key", "/abc/key", 0, currentRev)
+			require.NoError(t, err)
+			require.Empty(t, result)
+
 			rev, result, err = f.List(ctx, keyName, keyName, 0, currentRev)
 			require.NoError(t, err)
 			require.Equal(t, nextRev, rev)
 			require.Equal(t, []*server.KeyValue{event}, result)
+
+			rev, result, err = f.List(ctx, "/", keyName, 0, currentRev)
+			require.NoError(t, err)
+			require.NotContains(t, result, event)
 
 			rev, result, err = f.List(ctx, "/abc/", "/registry/health", 0, 1)
 			require.NoError(t, err)
