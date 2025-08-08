@@ -122,12 +122,14 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 		default:
 		}
 
-		watchFuture, _ := f.db.Transact(func(tr fdb.Transaction) (interface{}, error) {
+		watchFuture, err := transact(f.db, nil, func(tr fdb.Transaction) (fdb.FutureNil, error) {
 			return f.watch.Watch(&tr), nil
 		})
+		if err != nil {
+			continue
+		}
 
 		var afterResult *AfterResult
-		var err error
 		for afterResult, err = f.after("/", currentRev, maxBatchSize); err != nil; {
 			logrus.Errorf("Error in 'after' err=%v", err)
 		}
@@ -154,7 +156,7 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (*AfterResult, erro
 		End:   fdb.FirstGreaterOrEqual(end),
 	}
 
-	result, err := f.db.Transact(func(tr fdb.Transaction) (interface{}, error) {
+	result, err := transact(f.db, nil, func(tr fdb.Transaction) (*AfterResult, error) {
 		it := tr.GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
 
 		result := make([]*server.Event, 0, limit)
@@ -190,5 +192,5 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (*AfterResult, erro
 		return nil, err
 	}
 
-	return result.(*AfterResult), nil
+	return result, nil
 }

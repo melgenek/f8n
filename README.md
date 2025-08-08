@@ -47,6 +47,7 @@ Here is a list of implementation details that need to be completed before starti
 - [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
 - [ ] Implement compaction
 - [ ] put ttl events into a separate slice
+- [ ] make sure that write operations are idempotent
 
 ## Useful readings
 

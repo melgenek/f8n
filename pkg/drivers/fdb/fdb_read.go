@@ -16,10 +16,10 @@ type RevResult struct {
 }
 
 func (f *FDB) CurrentRevision(_ context.Context) (int64, error) {
-	key, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
+	key, err := transact(f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
 		return tr.GetReadVersion().Get()
 	})
-	return key.(int64), err
+	return key, err
 }
 
 func (f *FDB) List(_ context.Context, prefix, startKey string, limit, revision int64) (revRet int64, kvRet []*server.KeyValue, errRet error) {
@@ -98,7 +98,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 	// prefix=/registry/clusterroles/system:aggregate-to-edit, startKey=/registry/clusterroles/system:aggregate-to-edit
 
 	defer func() {
-		logrus.Errorf("listKeyValue (%s): prefix=%s, startKey=%s, maxRevision=%d => resRev=%d collector=%v resErr=%v", caller, prefix, startKey, maxRevision, resRev, collector, resErr)
+		logrus.Errorf("listWithCollector (%s): prefix=%s, startKey=%s, maxRevision=%d => resRev=%d collector=%v resErr=%v", caller, prefix, startKey, maxRevision, resRev, collector, resErr)
 	}()
 
 	var begin, end fdb.Selectable
@@ -135,11 +135,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 		begin, end = k.FDBRangeKeySelectors()
 	}
 
-	rev, err := transact(f.db, func(tr fdb.Transaction) (*int64, error) {
-		err := tr.Options().SetRetryLimit(1)
-		if err != nil {
-			return nil, fmt.Errorf("failed to set retry limit: %w", err)
-		}
+	rev, err := transact(f.db, 0, func(tr fdb.Transaction) (int64, error) {
 		it := tr.GetRange(fdb.SelectorRange{Begin: begin, End: end}, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
 
 		collector.initBatch()
@@ -147,7 +143,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 		for collector.canAppendMoreToBatch() && it.Advance() {
 			nextKeyAndRevRecord, err := f.byKeyAndRevision.GetFromIterator(it)
 			if err != nil {
-				return nil, err
+				return 0, err
 			}
 
 			if nextKeyAndRevRecord == nil {
@@ -157,7 +153,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 			if currentRecord != nil && currentRecord.Key.Key != nextKeyAndRevRecord.Key.Key {
 				if !currentRecord.Value.IsDelete {
 					if err := collector.appendToBatch(&tr, currentRecord); err != nil {
-						return nil, err
+						return 0, err
 					}
 				}
 				currentRecord = nil
@@ -171,30 +167,30 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 		if currentRecord != nil && !currentRecord.Value.IsDelete {
 			if !currentRecord.Value.IsDelete {
 				if err := collector.appendToBatch(&tr, currentRecord); err != nil {
-					return nil, err
+					return 0, err
 				}
 			}
 		}
 
 		if err := collector.finalizeBatch(); err != nil {
-			return nil, err
+			return 0, err
 		}
 
 		if rev, err := tr.GetReadVersion().Get(); err != nil {
-			return nil, err
+			return 0, err
 		} else {
-			return &rev, nil
+			return rev, nil
 		}
 	})
 	collector.appendBatchToResult()
-	
+
 	if err != nil {
 		return 0, err
 	}
 
-	if maxRevision > *rev {
-		return *rev, server.ErrFutureRev
+	if maxRevision > rev {
+		return rev, server.ErrFutureRev
 	}
 
-	return *rev, nil
+	return rev, nil
 }

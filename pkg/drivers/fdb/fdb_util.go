@@ -2,21 +2,27 @@ package fdb
 
 import (
 	"errors"
+	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 )
 
 var forceRetryTransaction = func(i int) bool { return false }
 
-func transact[T any](d fdb.Database, f func(fdb.Transaction) (*T, error)) (*T, error) {
+func transact[T any](d fdb.Database, defaultValue T, f func(fdb.Transaction) (T, error)) (T, error) {
 	tr, e := d.CreateTransaction()
 	// Any error here is non-retryable
 	if e != nil {
-		return nil, e
+		return defaultValue, fmt.Errorf("failed to create a transaction: %w", e)
 	}
 
-	wrapped := func() (ret *T, e error) {
+	wrapped := func() (ret T, e error) {
 		defer panicToError(&e)
 
+		e = tr.Options().SetRetryLimit(3)
+		if e != nil {
+			return defaultValue, fmt.Errorf("failed to set retry limit: %w", e)
+		}
+		
 		ret, e = f(tr)
 
 		if e == nil {
@@ -29,15 +35,15 @@ func transact[T any](d fdb.Database, f func(fdb.Transaction) (*T, error)) (*T, e
 	return retryable(wrapped, tr.OnError)
 }
 
-func retryable[T any](wrapped func() (*T, error), onError func(fdb.Error) fdb.FutureNil) (ret *T, e error) {
+func retryable[T any](wrapped func() (T, error), onError func(fdb.Error) fdb.FutureNil) (ret T, e error) {
 	for i := 0; ; i++ {
 		ret, e = wrapped()
 
 		// No error means success!
 		if e == nil {
 			if forceRetryTransaction(i) {
-				// timed_out
-				onError(fdb.Error{1007}).MustGet()
+				// commit_unknown_result
+				onError(fdb.Error{1021}).MustGet()
 			} else {
 				return
 			}
