@@ -88,10 +88,10 @@ func (f *FDB) list(caller, prefix, startKey string, limit, maxRevision int64) (r
 		}
 		it := tr.GetRange(fdb.SelectorRange{Begin: begin, End: end}, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
 
-		result := make([]*RevRecord, 0, limit)
+		resultIterators := make([]*fdb.RangeIterator, 0, limit)
 
 		var candidateRecord *ByKeyAndRevisionRecord = nil
-		for (int64(len(result)) < limit || limit == 0) && it.Advance() {
+		for (int64(len(resultIterators)) < limit || limit == 0) && it.Advance() {
 			nextKeyAndRevRecord, err := f.byKeyAndRevision.GetFromIterator(it)
 			if err != nil {
 				return nil, err
@@ -103,11 +103,11 @@ func (f *FDB) list(caller, prefix, startKey string, limit, maxRevision int64) (r
 
 			if candidateRecord != nil && candidateRecord.Key.Key != nextKeyAndRevRecord.Key.Key {
 				if !candidateRecord.Value.IsDelete {
-					fullRecord, err := f.byRevision.Get(&tr, candidateRecord.Key.Rev)
+					recordIt, err := f.byRevision.GetIterator(&tr, candidateRecord.Key.Rev)
 					if err != nil {
 						return nil, err
 					}
-					result = append(result, &RevRecord{Rev: candidateRecord.Key.Rev, Record: fullRecord})
+					resultIterators = append(resultIterators, recordIt)
 				}
 				candidateRecord = nil
 			}
@@ -119,12 +119,21 @@ func (f *FDB) list(caller, prefix, startKey string, limit, maxRevision int64) (r
 
 		if candidateRecord != nil && !candidateRecord.Value.IsDelete {
 			if !candidateRecord.Value.IsDelete {
-				fullRecord, err := f.byRevision.Get(&tr, candidateRecord.Key.Rev)
+				recordIt, err := f.byRevision.GetIterator(&tr, candidateRecord.Key.Rev)
 				if err != nil {
 					return nil, err
 				}
-				result = append(result, &RevRecord{Rev: candidateRecord.Key.Rev, Record: fullRecord})
+				resultIterators = append(resultIterators, recordIt)
 			}
+		}
+
+		result := make([]*RevRecord, len(resultIterators))
+		for i, it := range resultIterators {
+			rev, record, err := f.byRevision.GetFromIterator(it)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = &RevRecord{Rev: rev, Record: record}
 		}
 
 		if rev, err := tr.GetReadVersion().Get(); err != nil {
