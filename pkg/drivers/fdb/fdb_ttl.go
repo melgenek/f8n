@@ -106,7 +106,7 @@ func (f *FDB) deleteTTLEvent(ctx context.Context, rwMutex *sync.RWMutex, queue w
 
 // ttlEvents starts a goroutine to do a ListWatch on the root prefix. First it lists
 // all non-deleted keys with a page size of 1000, then it starts watching at the
-// revision returned by the initial list. Any keys that have a Lease associated with
+// revision returned by the initial listKeyValue. Any keys that have a Lease associated with
 // them are sent into the result channel for deferred handling of TTL expiration.
 func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 	result := make(chan *server.Event)
@@ -114,10 +114,12 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 	go func() {
 		defer close(result)
 
-		rev, revRecords, err := f.list("ttl1", "/", "/", 1000, 0)
+		collector := newListCollector(f, 1000)
+		rev, err := f.listWithCollector("ttl1", "/", "/", 0, collector)
+		revRecords := collector.records
 		for len(revRecords) > 0 {
 			if err != nil {
-				logrus.Errorf("TTL events list failed: %v", err)
+				logrus.Errorf("TTL events listKeyValue failed: %v", err)
 				return
 			}
 
@@ -127,7 +129,8 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 				}
 			}
 
-			_, revRecords, err = f.list("ttl2", "/", revRecords[len(revRecords)-1].Record.Key, 1000, rev)
+			collector = newListCollector(f, 1000)
+			rev, err = f.listWithCollector("ttl2", "/", revRecords[len(revRecords)-1].Record.Key, 0, collector)
 		}
 
 		wr := f.Watch(ctx, "/", rev)

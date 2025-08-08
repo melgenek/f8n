@@ -44,13 +44,9 @@ The implementation is in the `pkg/drivers/fdb` directory.
 ## TODO
 
 Here is a list of implementation details that need to be completed before starting scale testing of this implementation.
-- [ ] Value size is limited to 100KiB. Extend the size to 10MiB (transaction size limit) https://apple.github.io/foundationdb/largeval.html
 - [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
 - [ ] Implement compaction
 - [ ] put ttl events into a separate slice
-- [ ] do not deserialize all the data during counting
-
-
 
 ## Useful readings
 

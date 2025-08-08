@@ -17,6 +17,8 @@ import (
 )
 
 func TestFDB(t *testing.T) {
+	forceRetryTransaction = func(i int) bool { return i < 1 }
+
 	logrus.SetLevel(logrus.InfoLevel)
 	n := 4
 	sameKeyN := 3
@@ -36,7 +38,7 @@ func TestFDB(t *testing.T) {
 
 	_, result, err = f.List(ctx, "/registry/health", "/registry/health", 0, 0)
 	require.NoError(t, err)
-	require.Len(t, result, 1)
+	require.Len(t, result, 1, "Expected to find /registry/health in the list, but got: %v", result)
 
 	events := orderedmap.NewOrderedMap[string, []*server.KeyValue]()
 	history := make([]*server.Event, 0)
@@ -121,10 +123,18 @@ func TestFDB(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, valuesAsSlice(events), orEmpty(result))
 
+			_, count, err := f.Count(ctx, "/abc/", "/abc", currentRev)
+			require.NoError(t, err)
+			require.Equal(t, int64(events.Len()), count)
+
 			rev, result, err := f.List(ctx, keyName, keyName, 0, 0)
 			require.NoError(t, err)
 			require.LessOrEqual(t, nextRev, rev)
 			require.Equal(t, []*server.KeyValue{event}, result)
+
+			_, count, err = f.Count(ctx, keyName, keyName, 0)
+			require.NoError(t, err)
+			require.Equal(t, int64(1), count)
 
 			rev, result, err = f.List(ctx, "/", keyName, 0, 0)
 			require.NoError(t, err)
@@ -284,7 +294,7 @@ func TestFDBLargeRecords(t *testing.T) {
 	// Verify it's gone with List
 	_, kvsAfterDelete, err := f.List(ctx, "/large/", "", 0, 0)
 	require.NoError(t, err)
-	require.Len(t, kvsAfterDelete, recordCount-1, "list should have one less record after delete")
+	require.Len(t, kvsAfterDelete, recordCount-1, "listKeyValue should have one less record after delete")
 
 	listedRecordsAfterDelete := make(map[string][]byte)
 	for _, kv := range kvsAfterDelete {

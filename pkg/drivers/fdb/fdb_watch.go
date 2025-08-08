@@ -2,6 +2,7 @@ package fdb
 
 import (
 	"context"
+	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
@@ -14,7 +15,11 @@ const maxBatchSize = 1000
 
 type AfterResult struct {
 	currentRevision int64
-	revRecords      []*server.Event
+	events          []*server.Event
+}
+
+func (a *AfterResult) String() string {
+	return fmt.Sprintf("rev=%d, events=%d", a.currentRevision, len(a.events))
 }
 
 func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.WatchResult {
@@ -24,7 +29,7 @@ func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.W
 	ctx, cancel := context.WithCancel(ctx)
 	readChan := f.innerWatch(ctx, prefix)
 
-	// include the current revision in list
+	// include the current revision in listKeyValue
 	if revision > 0 {
 		revision--
 	}
@@ -33,25 +38,25 @@ func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.W
 	wr := server.WatchResult{Events: result}
 
 	// initial read
-	rev, kvs, err := f.after(prefix, revision, 0)
+	afterResult, err := f.after(prefix, revision, 0)
 	if err != nil {
 		cancel()
 	}
 
-	logrus.Tracef("WATCH LIST key=%s rev=%d => rev=%d kvs=%d", prefix, revision, rev, len(kvs))
+	logrus.Tracef("WATCH LIST key=%s rev=%d => %v", prefix, revision, afterResult)
 
 	go func() {
 		lastRevision := revision
-		if len(kvs) > 0 {
-			lastRevision = rev
+		if len(afterResult.events) > 0 {
+			lastRevision = afterResult.currentRevision
 		}
 
-		if len(kvs) > 0 {
-			result <- kvs
+		if len(afterResult.events) > 0 {
+			result <- afterResult.events
 		}
 
 		for events := range readChan {
-			//skip revRecords that have already been sent in the initial batch
+			//skip events that have already been sent in the initial batch
 			for len(events) > 0 && events[0].KV.ModRevision <= lastRevision {
 				events = events[1:]
 			}
@@ -95,7 +100,7 @@ func doesEventHavePrefix(key string, prefix string) bool {
 }
 
 func (f *FDB) startWatch() (chan interface{}, error) {
-	pollStart, err := f.CurrentRevision(nil)
+	pollStart, err := f.CurrentRevision(f.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -121,16 +126,15 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 			return f.watch.Watch(&tr), nil
 		})
 
-		var newRev int64
-		var events []*server.Event
+		var afterResult *AfterResult
 		var err error
-		for newRev, events, err = f.after("/", currentRev, maxBatchSize); err != nil; {
+		for afterResult, err = f.after("/", currentRev, maxBatchSize); err != nil; {
 			logrus.Errorf("Error in 'after' err=%v", err)
 		}
 
-		currentRev = newRev
-		if len(events) > 0 {
-			result <- events
+		currentRev = afterResult.currentRevision
+		if len(afterResult.events) > 0 {
+			result <- afterResult.events
 			watchFuture.(fdb.FutureNil).Cancel()
 		} else if err := watchFuture.(fdb.FutureNil).Get(); err != nil {
 			logrus.Errorf("Error waiting for a watch err=%v", err)
@@ -138,7 +142,7 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 	}
 }
 
-func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.Event, error) {
+func (f *FDB) after(prefix string, minRevision, limit int64) (*AfterResult, error) {
 	begin := f.byRevision.GetSubspace().Pack(tuple.Tuple{int64ToVersionstamp(minRevision)})
 	_, end := f.byRevision.GetSubspace().FDBRangeKeys()
 
@@ -180,11 +184,11 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.E
 			return nil, err
 		}
 
-		return &AfterResult{currentRevision: rev, revRecords: result}, nil
+		return &AfterResult{currentRevision: rev, events: result}, nil
 	})
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
 
-	return result.(*AfterResult).currentRevision, result.(*AfterResult).revRecords, err
+	return result.(*AfterResult), nil
 }
