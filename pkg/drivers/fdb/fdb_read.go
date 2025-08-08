@@ -90,7 +90,7 @@ func (f *FDB) list(caller, prefix, startKey string, limit, maxRevision int64) (r
 
 		result := make([]*RevRecord, 0, limit)
 
-		var candidateRecord *RevRecord = nil
+		var candidateRecord *ByKeyAndRevisionRecord = nil
 		for (int64(len(result)) < limit || limit == 0) && it.Advance() {
 			nextKeyAndRevRecord, err := f.byKeyAndRevision.GetFromIterator(it)
 			if err != nil {
@@ -101,25 +101,30 @@ func (f *FDB) list(caller, prefix, startKey string, limit, maxRevision int64) (r
 				break
 			}
 
-			if candidateRecord != nil && candidateRecord.Record.Key != nextKeyAndRevRecord.Key.Key {
-				if !candidateRecord.Record.IsDelete {
-					result = append(result, candidateRecord)
+			if candidateRecord != nil && candidateRecord.Key.Key != nextKeyAndRevRecord.Key.Key {
+				if !candidateRecord.Value.IsDelete {
+					fullRecord, err := f.byRevision.Get(&tr, candidateRecord.Key.Rev)
+					if err != nil {
+						return nil, err
+					}
+					result = append(result, &RevRecord{Rev: candidateRecord.Key.Rev, Record: fullRecord})
 				}
 				candidateRecord = nil
 			}
 
 			if maxRevision == 0 || versionstampToInt64(nextKeyAndRevRecord.Key.Rev) <= maxRevision {
-				nextRecord, err := f.byRevision.Get(&tr, nextKeyAndRevRecord.Key.Rev)
-				if err != nil {
-					return nil, err
-				}
-
-				candidateRecord = &RevRecord{Rev: nextKeyAndRevRecord.Key.Rev, Record: nextRecord}
+				candidateRecord = nextKeyAndRevRecord
 			}
 		}
 
-		if candidateRecord != nil && !candidateRecord.Record.IsDelete {
-			result = append(result, candidateRecord)
+		if candidateRecord != nil && !candidateRecord.Value.IsDelete {
+			if !candidateRecord.Value.IsDelete {
+				fullRecord, err := f.byRevision.Get(&tr, candidateRecord.Key.Rev)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, &RevRecord{Rev: candidateRecord.Key.Rev, Record: fullRecord})
+			}
 		}
 
 		if rev, err := tr.GetReadVersion().Get(); err != nil {

@@ -83,22 +83,10 @@ func (s *ByRevisionSubspace) ParseKV(kv fdb.KeyValue) (tuple.Versionstamp, *Reco
 }
 
 func (s *ByRevisionSubspace) Get(tr *fdb.Transaction, rev tuple.Versionstamp) (*Record, error) {
-	key := s.subspace.Pack(tuple.Tuple{rev})
-	//s.subspace.FDBRangeKeys()
-	selector, err := fdb.PrefixRange(key)
+	it, err := s.GetIterator(tr, rev)
 	if err != nil {
 		return nil, err
 	}
-	//selector := fdb.SelectorRange{
-	//	Begin: fdb.FirstGreaterOrEqual(key),
-	//	End:   fdb.FirstGreaterOrEqual(key),
-	//}
-	//res, err := tr.Get(key).Get()
-	//if err != nil {
-	//	return nil, err
-	//}
-	//fmt.Printf("Get result: %s => %s\n", rev.String(), res)
-	it := tr.GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeWantAll}).Iterator()
 	_, record, err := s.GetFromIterator(it)
 	if err != nil {
 		return nil, err
@@ -108,6 +96,15 @@ func (s *ByRevisionSubspace) Get(tr *fdb.Transaction, rev tuple.Versionstamp) (*
 	}
 
 	return record, nil
+}
+
+func (s *ByRevisionSubspace) GetIterator(tr *fdb.Transaction, rev tuple.Versionstamp) (*fdb.RangeIterator, error) {
+	selector, err := fdb.PrefixRange(s.subspace.Pack(tuple.Tuple{rev}))
+	if err != nil {
+		return nil, err
+	}
+	it := tr.GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeWantAll}).Iterator()
+	return it, nil
 }
 
 func (s *ByRevisionSubspace) GetFromIterator(it *fdb.RangeIterator) (tuple.Versionstamp, *Record, error) {
