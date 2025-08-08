@@ -23,7 +23,7 @@ func revRecordToEvent(revRecord *RevRecord) *server.Event {
 		event.KV.CreateRevision = event.KV.ModRevision
 		event.PrevKV = nil
 	}
-	if revRecord.Record.PrevRevision != stubVersionstamp {
+	if revRecord.Record.PrevRevision != dummyVersionstamp {
 		event.PrevKV = &server.KeyValue{
 			ModRevision: versionstampToInt64(revRecord.Record.PrevRevision),
 		}
@@ -41,15 +41,14 @@ func versionstampToInt64(versionstamp tuple.Versionstamp) int64 {
 }
 
 func int64ToVersionstamp(minRevision int64) tuple.Versionstamp {
-	beginVersionstamp := lastVersionstamp
+	beginVersionstamp := tuple.IncompleteVersionstamp(0xFFFF)
 	binary.BigEndian.PutUint64(beginVersionstamp.TransactionVersion[:], uint64(minRevision))
 	return beginVersionstamp
 }
 
-var lastVersionstamp = tuple.IncompleteVersionstamp(0xFFFF)
-var stubVersionstamp = createStubVersionstamp()
+var dummyVersionstamp = createDummyVersionstamp()
 
-func createStubVersionstamp() tuple.Versionstamp {
+func createDummyVersionstamp() tuple.Versionstamp {
 	versionstamp := tuple.IncompleteVersionstamp(10)
 	for i := 0; i < 10; i++ {
 		versionstamp.TransactionVersion[i] = byte(i)

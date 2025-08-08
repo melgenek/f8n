@@ -44,7 +44,6 @@ The implementation is in the `pkg/drivers/fdb` directory.
 ## TODO
 
 Here is a list of implementation details that need to be completed before starting scale testing of this implementation.
-- [ ] implement `get` method in terms of a reverse range scan
 - [ ] Value size is limited to 100KiB. Extend the size to 10MiB (transaction size limit) https://apple.github.io/foundationdb/largeval.html
 - [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
 - [ ] Implement compaction
@@ -88,5 +87,7 @@ Here is a list of implementation details that need to be completed before starti
 - https://forums.foundationdb.org/t/read-only-transactions/3412
 - https://github.com/apple/foundationdb/wiki/Difference-between-snapshot-reads-and-regular-reads
 - https://forums.foundationdb.org/t/use-of-setreadversion/3696/2
+- https://forums.foundationdb.org/t/changes-feed-without-hot-keys/1057/2
+- https://forums.foundationdb.org/t/variable-chunk-size-for-blobs/1174/2
 - 
 

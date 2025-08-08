@@ -61,7 +61,7 @@ func (r *writeResult) getResult() (int64, *server.KeyValue, bool, error) {
 
 func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (revRet int64, errRet error) {
 	res, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-		prevRevRecord, err := f.getLast(&tr, key)
+		lastRecord, err := f.getLast(&tr, key)
 
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
@@ -73,15 +73,15 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 			IsDelete:       false,
 			Lease:          lease,
 			Value:          value,
-			CreateRevision: stubVersionstamp,
-			PrevRevision:   stubVersionstamp,
+			CreateRevision: dummyVersionstamp,
+			PrevRevision:   dummyVersionstamp,
 		}
-		if prevRevRecord != nil {
-			if !prevRevRecord.Record.IsDelete {
-				logrus.Tracef("ERR_KEY_EXISTS %s, prevRevRecord=%+v", key, prevRevRecord)
+		if lastRecord != nil {
+			if !lastRecord.Value.IsDelete {
+				logrus.Tracef("ERR_KEY_EXISTS %s, prevRev=%+v", key, lastRecord.Key.Rev)
 				return newModificationResultRev(zeroFuture, nil, false), server.ErrKeyExists
 			}
-			createRecord.PrevRevision = prevRevRecord.Rev
+			createRecord.PrevRevision = lastRecord.Key.Rev
 		}
 
 		keyFuture, err := f.append(&tr, createRecord)
@@ -102,17 +102,21 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 
 func (f *FDB) Update(_ context.Context, key string, value []byte, revision, lease int64) (revRet int64, kvRet *server.KeyValue, updateRet bool, errRet error) {
 	res, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-		revRecord, err := f.getLast(&tr, key)
+		lastRecord, err := f.getLast(&tr, key)
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
 
-		if revRecord == nil || revRecord.Record.IsDelete {
+		if lastRecord == nil || lastRecord.Value.IsDelete {
 			return newModificationResultRev(zeroFuture, nil, false), nil
 		}
 
-		if versionstampToInt64(revRecord.Rev) != revision {
-			return newModificationResultRev(tr.GetReadVersion(), revRecord, false), err
+		if versionstampToInt64(lastRecord.Key.Rev) != revision {
+			if record, err := f.byRevision.Get(&tr, lastRecord.Key.Rev); err != nil {
+				return newModificationResultRev(zeroFuture, nil, false), err
+			} else {
+				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), err
+			}
 		}
 
 		updateRecord := &Record{
@@ -121,8 +125,8 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 			IsDelete:       false,
 			Lease:          lease,
 			Value:          value,
-			CreateRevision: revRecord.GetCreateRevision(),
-			PrevRevision:   revRecord.Rev,
+			CreateRevision: lastRecord.GetCreateRevision(),
+			PrevRevision:   lastRecord.Key.Rev,
 		}
 
 		keyFuture, err := f.append(&tr, updateRecord)
@@ -139,21 +143,30 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 
 func (f *FDB) Delete(_ context.Context, key string, revision int64) (revRet int64, kvRet *server.KeyValue, deletedRet bool, errRet error) {
 	res, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-		revRecord, err := f.getLast(&tr, key)
+		lastRecord, err := f.getLast(&tr, key)
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
 
-		if revRecord == nil {
+		if lastRecord == nil {
 			return newModificationResultRev(tr.GetReadVersion(), nil, true), nil
 		}
 
-		if revRecord.Record.IsDelete {
-			return newModificationResultRev(tr.GetReadVersion(), revRecord, true), nil
+		if lastRecord.Value.IsDelete {
+			if record, err := f.byRevision.Get(&tr, lastRecord.Key.Rev); err != nil {
+				return newModificationResultRev(zeroFuture, nil, false), err
+			} else {
+				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, true), nil
+			}
+
 		}
 
-		if revision != 0 && versionstampToInt64(revRecord.Rev) != revision {
-			return newModificationResultRev(tr.GetReadVersion(), revRecord, false), nil
+		if revision != 0 && versionstampToInt64(lastRecord.Key.Rev) != revision {
+			if record, err := f.byRevision.Get(&tr, lastRecord.Key.Rev); err != nil {
+				return newModificationResultRev(zeroFuture, nil, false), err
+			} else {
+				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), nil
+			}
 		}
 
 		deleteRecord := &Record{
@@ -162,8 +175,8 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (revRet int6
 			IsDelete:       true,
 			Lease:          0,
 			Value:          nil,
-			CreateRevision: revRecord.GetCreateRevision(),
-			PrevRevision:   revRecord.Rev,
+			CreateRevision: lastRecord.GetCreateRevision(),
+			PrevRevision:   lastRecord.Key.Rev,
 		}
 
 		keyFuture, err := f.append(&tr, deleteRecord)
@@ -180,11 +193,12 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (revRet int6
 
 func (f *FDB) append(tr *fdb.Transaction, record *Record) (retRev fdb.FutureKey, retErr error) {
 	newRev := tuple.IncompleteVersionstamp(0)
-	if err := f.byRevision.Write(tr, newRev, record.Key); err != nil {
+	if err := f.byRevision.Write(tr, newRev, record); err != nil {
 		return nil, err
 	}
 
-	if err := f.byKeyAndRevision.Write(tr, &KeyAndRevision{Key: record.Key, Rev: newRev}, record); err != nil {
+	byKeyRevValue := &ByKeyAndRevisionValue{IsDelete: record.IsDelete, IsCreate: record.IsCreate, CreateRevision: record.CreateRevision}
+	if err := f.byKeyAndRevision.Write(tr, &KeyAndRevision{Key: record.Key, Rev: newRev}, byKeyRevValue); err != nil {
 		return nil, err
 	}
 

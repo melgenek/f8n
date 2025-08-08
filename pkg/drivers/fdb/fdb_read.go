@@ -82,31 +82,39 @@ func (f *FDB) list(caller, prefix, startKey string, limit, maxRevision int64) (r
 	}
 
 	result, err := f.db.Transact(func(tr fdb.Transaction) (interface{}, error) {
+		err := tr.Options().SetRetryLimit(1)
+		if err != nil {
+			return nil, fmt.Errorf("failed to set retry limit: %w", err)
+		}
 		it := tr.GetRange(fdb.SelectorRange{Begin: begin, End: end}, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
 
 		result := make([]*RevRecord, 0, limit)
 
 		var candidateRecord *RevRecord = nil
 		for (int64(len(result)) < limit || limit == 0) && it.Advance() {
-			kv, err := it.Get()
+			nextKeyAndRevRecord, err := f.byKeyAndRevision.GetFromIterator(it)
 			if err != nil {
 				return nil, err
 			}
 
-			nextRecordKey, nextRecord, err := f.byKeyAndRevision.ParseKV(kv)
-			if err != nil {
-				return nil, err
+			if nextKeyAndRevRecord == nil {
+				break
 			}
 
-			if candidateRecord != nil && candidateRecord.Record.Key != nextRecord.Key {
+			if candidateRecord != nil && candidateRecord.Record.Key != nextKeyAndRevRecord.Key.Key {
 				if !candidateRecord.Record.IsDelete {
 					result = append(result, candidateRecord)
 				}
 				candidateRecord = nil
 			}
 
-			if maxRevision == 0 || versionstampToInt64(nextRecordKey.Rev) <= maxRevision {
-				candidateRecord = &RevRecord{Rev: nextRecordKey.Rev, Record: nextRecord}
+			if maxRevision == 0 || versionstampToInt64(nextKeyAndRevRecord.Key.Rev) <= maxRevision {
+				nextRecord, err := f.byRevision.Get(&tr, nextKeyAndRevRecord.Key.Rev)
+				if err != nil {
+					return nil, err
+				}
+
+				candidateRecord = &RevRecord{Rev: nextKeyAndRevRecord.Key.Rev, Record: nextRecord}
 			}
 		}
 
@@ -149,22 +157,15 @@ func (f *FDB) Get(_ context.Context, key, rangeEnd string, limit, revision int64
 	return rev, revRecordToEvent(events[0]).KV, nil
 }
 
-func (f *FDB) getLast(tr *fdb.Transaction, key string) (*RevRecord, error) {
+func (f *FDB) getLast(tr *fdb.Transaction, key string) (*ByKeyAndRevisionRecord, error) {
 	keyRange := f.byKeyAndRevision.GetSubspace().Sub(key)
 	it := tr.GetRange(keyRange, fdb.RangeOptions{Limit: 1, Mode: fdb.StreamingModeExact, Reverse: true}).Iterator()
 
-	if it.Advance() {
-		kv, err := it.Get()
-		if err != nil {
-			return nil, err
-		}
-		recordKey, recordValue, err := f.byKeyAndRevision.ParseKV(kv)
-		if err != nil {
-			return nil, err
-		}
-		return &RevRecord{Rev: recordKey.Rev, Record: recordValue}, err
+	keyAndRevRecord, err := f.byKeyAndRevision.GetFromIterator(it)
+	if err != nil {
+		return nil, err
 	} else {
-		return nil, nil
+		return keyAndRevRecord, nil
 	}
 }
 

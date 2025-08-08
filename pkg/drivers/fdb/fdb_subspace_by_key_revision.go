@@ -12,27 +12,23 @@ type KeyAndRevision struct {
 	Rev tuple.Versionstamp
 }
 
-type RevRecord struct {
-	Rev    tuple.Versionstamp
-	Record *Record
-}
-
-func (r *RevRecord) GetCreateRevision() tuple.Versionstamp {
-	if r.Record.IsCreate {
-		return r.Rev
-	} else {
-		return r.Record.CreateRevision
-	}
-}
-
-type Record struct {
-	Key            string
-	IsDelete       bool
+type ByKeyAndRevisionValue struct {
 	IsCreate       bool
-	Lease          int64
+	IsDelete       bool
 	CreateRevision tuple.Versionstamp
-	PrevRevision   tuple.Versionstamp
-	Value          []byte
+}
+
+type ByKeyAndRevisionRecord struct {
+	Key   KeyAndRevision
+	Value ByKeyAndRevisionValue
+}
+
+func (r *ByKeyAndRevisionRecord) GetCreateRevision() tuple.Versionstamp {
+	if r.Value.IsCreate {
+		return r.Key.Rev
+	} else {
+		return r.Value.CreateRevision
+	}
 }
 
 type ByKeyAndRevisionSubspace struct {
@@ -49,67 +45,43 @@ func (s *ByKeyAndRevisionSubspace) GetSubspace() subspace.Subspace {
 	return s.subspace
 }
 
-func (s *ByKeyAndRevisionSubspace) Write(tr *fdb.Transaction, key *KeyAndRevision, value *Record) error {
-	record := recordToTuple(value).Pack()
+func (s *ByKeyAndRevisionSubspace) Write(tr *fdb.Transaction, key *KeyAndRevision, value *ByKeyAndRevisionValue) error {
 	if revisionKey, err := s.subspace.PackWithVersionstamp(tuple.Tuple{key.Key, key.Rev}); err != nil {
 		return err
 	} else {
-		tr.SetVersionstampedKey(revisionKey, record)
+		tr.SetVersionstampedKey(revisionKey, tuple.Tuple{value.IsCreate, value.IsDelete, value.CreateRevision}.Pack())
 		return nil
 	}
 }
 
-func (s *ByKeyAndRevisionSubspace) Get(tr *fdb.Transaction, key *KeyAndRevision) (*Record, error) {
-	eventBytes, err := tr.Get(s.subspace.Pack(tuple.Tuple{key.Key, key.Rev})).Get()
+func (s *ByKeyAndRevisionSubspace) GetFromIterator(it *fdb.RangeIterator) (*ByKeyAndRevisionRecord, error) {
+	if !it.Advance() {
+		return nil, nil
+	}
+	kv, err := it.Get()
 	if err != nil {
 		return nil, err
 	}
-	return parseValue(eventBytes)
+	return s.parseKV(kv)
 }
 
-func (s *ByKeyAndRevisionSubspace) ParseKV(kv fdb.KeyValue) (*KeyAndRevision, *Record, error) {
+func (s *ByKeyAndRevisionSubspace) parseKV(kv fdb.KeyValue) (*ByKeyAndRevisionRecord, error) {
 	k, err := s.subspace.Unpack(kv.Key)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	key := k[0].(string)
 	versionstamp := k[1].(tuple.Versionstamp)
-	event, err := parseValue(kv.Value)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &KeyAndRevision{Key: key, Rev: versionstamp}, event, nil
-}
-
-func parseValue(value []byte) (*Record, error) {
-	unpackedTuple, err := tuple.Unpack(value)
+	unpackedTuple, err := tuple.Unpack(kv.Value)
 	if err != nil {
 		return nil, err
 	}
-	event := tupleToRecord(unpackedTuple)
-	return event, nil
-}
-
-func recordToTuple(record *Record) tuple.Tuple {
-	return tuple.Tuple{
-		record.Key,
-		record.IsDelete,
-		record.IsCreate,
-		record.Lease,
-		record.CreateRevision,
-		record.PrevRevision,
-		record.Value,
-	}
-}
-
-func tupleToRecord(t tuple.Tuple) *Record {
-	return &Record{
-		Key:            t[0].(string),
-		IsDelete:       t[1].(bool),
-		IsCreate:       t[2].(bool),
-		Lease:          t[3].(int64),
-		CreateRevision: t[4].(tuple.Versionstamp),
-		PrevRevision:   t[5].(tuple.Versionstamp),
-		Value:          t[6].([]byte),
-	}
+	isCreate := unpackedTuple[0].(bool)
+	isDelete := unpackedTuple[1].(bool)
+	createRevision := unpackedTuple[2].(tuple.Versionstamp)
+	return &ByKeyAndRevisionRecord{
+			KeyAndRevision{Key: key, Rev: versionstamp},
+			ByKeyAndRevisionValue{IsCreate: isCreate, IsDelete: isDelete, CreateRevision: createRevision},
+		},
+		nil
 }

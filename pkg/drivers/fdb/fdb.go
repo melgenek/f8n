@@ -76,7 +76,7 @@ func (f *FDB) Start(ctx context.Context) error {
 	f.byKeyAndRevision = CreateByKeyRevisionSubspace(kine)
 	f.watch = CreateWatchSubspace(kine)
 
-	// See https://github.com/kubernetes/kubernetes/blob/442a69c3bdf6fe8e525b05887e57d89db1e2f3a5/staging/src/k8s.io/apiserver/pkg/storage/storagebackend/factory/etcd3.go#L97
+	// https://github.com/kubernetes/kubernetes/blob/442a69c3bdf6fe8e525b05887e57d89db1e2f3a5/staging/src/k8s.io/apiserver/pkg/storage/storagebackend/factory/etcd3.go#L97
 	if _, err := f.Create(ctx, "/registry/health", []byte(`{"health":"true"}`), 0); err != nil {
 		if err != server.ErrKeyExists {
 			logrus.Errorf("Failed to create health check key: %v", err)

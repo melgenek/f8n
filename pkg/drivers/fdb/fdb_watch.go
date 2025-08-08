@@ -155,29 +155,20 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (int64, []*server.E
 
 		result := make([]*server.Event, 0, limit)
 		for (int64(len(result)) < limit || limit == 0) && it.Advance() {
-			kv, err := it.Get()
-			if err != nil {
-				return nil, err
-			}
-			rev, key, err := f.byRevision.ParseKV(kv)
+			rev, record, err := f.byRevision.GetFromIterator(it)
 			if err != nil {
 				return nil, err
 			}
 
-			if doesEventHavePrefix(key, prefix) {
-				record, err := f.byKeyAndRevision.Get(&tr, &KeyAndRevision{Key: key, Rev: rev})
-				if err != nil {
-					return nil, err
-				}
+			if doesEventHavePrefix(record.Key, prefix) {
 				event := revRecordToEvent(&RevRecord{Rev: rev, Record: record})
 
-				if record.PrevRevision != stubVersionstamp {
-					prevRecord, err := f.byKeyAndRevision.Get(&tr, &KeyAndRevision{Key: key, Rev: record.PrevRevision})
+				if record.PrevRevision != dummyVersionstamp {
+					prevRecord, err := f.byRevision.Get(&tr, record.PrevRevision)
 					if err != nil {
 						return nil, err
 					}
-					prevEvent := revRecordToEvent(&RevRecord{Rev: record.PrevRevision, Record: prevRecord})
-					event.PrevKV = prevEvent.KV
+					event.PrevKV = revRecordToEvent(&RevRecord{Rev: record.PrevRevision, Record: prevRecord}).KV
 				}
 
 				result = append(result, event)

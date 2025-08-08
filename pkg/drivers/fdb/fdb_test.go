@@ -1,8 +1,11 @@
 package fdb
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"slices"
 	"testing"
 	"time"
@@ -216,6 +219,78 @@ func TestFDB(t *testing.T) {
 			require.Errorf(t, ctx.Err(), "context done")
 		}
 	}
+}
+
+func TestFDBLargeRecords(t *testing.T) {
+	logrus.SetLevel(logrus.InfoLevel)
+
+	f := NewFdbStructured("VufDkgAW:O2dFQHXk@127.0.0.1:4689")
+	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(20)*time.Second)
+	defer cancelCtx()
+
+	err := f.Start(ctx)
+	require.NoError(t, err)
+
+	recordCount := 5
+	recordSize := 8 * 1024 * 1024 // 8 MiB
+
+	// Create large records
+	records := make(map[string][]byte)
+	for i := 0; i < recordCount; i++ {
+		key := fmt.Sprintf("/large/key%d", i)
+		value := make([]byte, recordSize)
+		_, err := rand.Read(value)
+		require.NoError(t, err)
+		records[key] = value
+
+		rev, err := f.Create(ctx, key, value, 0)
+		require.NoError(t, err)
+		assert.Greater(t, rev, int64(0))
+	}
+
+	//// Get each record individually
+	for key, value := range records {
+		_, kv, err := f.Get(ctx, key, "", 0, 0)
+		require.NoError(t, err)
+		require.NotNil(t, kv)
+		assert.Equal(t, key, kv.Key)
+		assert.True(t, bytes.Equal(value, kv.Value), "value for key %s does not match", key)
+	}
+
+	// List all records
+	_, kvs, err := f.List(ctx, "/large/", "/large/", 0, 0)
+	require.NoError(t, err)
+	assert.Len(t, kvs, recordCount)
+
+	// Verify listed records
+	listedRecords := make(map[string][]byte)
+	for _, kv := range kvs {
+		listedRecords[kv.Key] = kv.Value
+	}
+	assert.Equal(t, records, listedRecords, "listed records do not match created records")
+
+	// Delete one record
+	keyToDelete := "/large/key1"
+	_, _, deleted, err := f.Delete(ctx, keyToDelete, 0)
+	require.NoError(t, err)
+	require.True(t, deleted, "record should be deleted")
+	delete(records, keyToDelete)
+
+	// Verify it's gone with Get
+	_, kv, err := f.Get(ctx, keyToDelete, "", 0, 0)
+	require.NoError(t, err)
+	require.Nil(t, kv, "deleted record should not be found with Get")
+
+	// Verify it's gone with List
+	_, kvsAfterDelete, err := f.List(ctx, "/large/", "", 0, 0)
+	require.NoError(t, err)
+	require.Len(t, kvsAfterDelete, recordCount-1, "list should have one less record after delete")
+
+	listedRecordsAfterDelete := make(map[string][]byte)
+	for _, kv := range kvsAfterDelete {
+		listedRecordsAfterDelete[kv.Key] = kv.Value
+	}
+	require.Equal(t, records, listedRecordsAfterDelete, "listed records after delete do not match expected")
 }
 
 func orEmpty(result []*server.KeyValue) []*server.KeyValue {
