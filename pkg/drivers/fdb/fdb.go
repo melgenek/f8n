@@ -82,7 +82,7 @@ func (f *FDB) Start(ctx context.Context) error {
 			logrus.Errorf("Failed to create health check key: %v", err)
 		}
 	}
-	//go f.ttl(ctx)
+	go f.ttl(ctx)
 
 	return nil
 }

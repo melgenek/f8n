@@ -17,7 +17,7 @@ import (
 )
 
 func TestFDB(t *testing.T) {
-	forceRetryTransaction = func(i int) bool { return i < 1 }
+	forceRetryTransaction = func(i int) bool { return i < 2 }
 
 	logrus.SetLevel(logrus.InfoLevel)
 	n := 4

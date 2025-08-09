@@ -1,6 +1,7 @@
 package fdb
 
 import (
+	"bytes"
 	"context"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
@@ -59,8 +60,11 @@ func (r *writeResult) getResult() (int64, *server.KeyValue, bool, error) {
 	return revRes, kv, r.writeSuccess, nil
 }
 
-func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (revRet int64, errRet error) {
-	res, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
+func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (int64, error) {
+	// Use a UUID to avoid duplicate writes in case of transaction retries.
+	// https://apple.github.io/foundationdb/automatic-idempotency.html
+	lastWriteUUID := createUUID()
+	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
 		lastRecord, err := f.getLast(&tr, key)
 
 		if err != nil {
@@ -77,17 +81,25 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 			PrevRevision:   dummyVersionstamp,
 		}
 		if lastRecord != nil {
-			if !lastRecord.Value.IsDelete {
-				logrus.Tracef("ERR_KEY_EXISTS %s, prevRev=%+v", key, lastRecord.Key.Rev)
+			if lastRecord.Value.IsCreate {
+				if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
+					logrus.Errorf("Create succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
+					return newModificationResultRev(tr.GetReadVersion(), nil, true), err
+				} else {
+					return newModificationResultRev(zeroFuture, nil, false), server.ErrKeyExists
+				}
+			} else if !lastRecord.Value.IsDelete {
+				logrus.Errorf("The key '%s' already exists, prevRev=%+v", key, lastRecord.Key.Rev)
 				return newModificationResultRev(zeroFuture, nil, false), server.ErrKeyExists
 			}
 			createRecord.PrevRevision = lastRecord.Key.Rev
 		}
 
-		keyFuture, err := f.append(&tr, createRecord)
+		keyFuture, uuid, err := f.append(&tr, createRecord)
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
+		lastWriteUUID = uuid
 		return newModificationResultKey(keyFuture, nil, true), nil
 	})
 
@@ -95,13 +107,13 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 		return 0, err
 	}
 
-	castedRes := res.(*writeResult)
-	rev, _, _, err := castedRes.getResult()
+	rev, _, _, err := res.getResult()
 	return rev, err
 }
 
-func (f *FDB) Update(_ context.Context, key string, value []byte, revision, lease int64) (revRet int64, kvRet *server.KeyValue, updateRet bool, errRet error) {
-	res, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
+func (f *FDB) Update(_ context.Context, key string, value []byte, revision, lease int64) (int64, *server.KeyValue, bool, error) {
+	lastWriteUUID := createUUID()
+	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
 		lastRecord, err := f.getLast(&tr, key)
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
@@ -114,6 +126,9 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 		if versionstampToInt64(lastRecord.Key.Rev) != revision {
 			if record, err := f.byRevision.Get(&tr, lastRecord.Key.Rev); err != nil {
 				return newModificationResultRev(zeroFuture, nil, false), err
+			} else if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
+				logrus.Errorf("Update succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
+				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, true), nil
 			} else {
 				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), err
 			}
@@ -129,20 +144,21 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 			PrevRevision:   lastRecord.Key.Rev,
 		}
 
-		keyFuture, err := f.append(&tr, updateRecord)
+		keyFuture, uuid, err := f.append(&tr, updateRecord)
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
+		lastWriteUUID = uuid
 		return newModificationResultKey(keyFuture, &RevRecord{Record: updateRecord}, true), nil
 	})
 	if err != nil {
 		return 0, nil, false, err
 	}
-	return res.(*writeResult).getResult()
+	return res.getResult()
 }
 
-func (f *FDB) Delete(_ context.Context, key string, revision int64) (revRet int64, kvRet *server.KeyValue, deletedRet bool, errRet error) {
-	res, err := f.db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
+func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *server.KeyValue, bool, error) {
+	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
 		lastRecord, err := f.getLast(&tr, key)
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
@@ -158,7 +174,6 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (revRet int6
 			} else {
 				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, true), nil
 			}
-
 		}
 
 		if revision != 0 && versionstampToInt64(lastRecord.Key.Rev) != revision {
@@ -179,7 +194,7 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (revRet int6
 			PrevRevision:   lastRecord.Key.Rev,
 		}
 
-		keyFuture, err := f.append(&tr, deleteRecord)
+		keyFuture, _, err := f.append(&tr, deleteRecord)
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
@@ -188,23 +203,29 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (revRet int6
 	if err != nil {
 		return 0, nil, false, err
 	}
-	return res.(*writeResult).getResult()
+	return res.getResult()
 }
 
-func (f *FDB) append(tr *fdb.Transaction, record *Record) (retRev fdb.FutureKey, retErr error) {
+func (f *FDB) append(tr *fdb.Transaction, record *Record) (fdb.FutureKey, tuple.UUID, error) {
+	uuid := createUUID()
 	newRev := tuple.IncompleteVersionstamp(0)
 	if err := f.byRevision.Write(tr, newRev, record); err != nil {
-		return nil, err
+		return nil, uuid, err
 	}
 
-	byKeyRevValue := &ByKeyAndRevisionValue{IsDelete: record.IsDelete, IsCreate: record.IsCreate, CreateRevision: record.CreateRevision}
+	byKeyRevValue := &ByKeyAndRevisionValue{
+		IsDelete:       record.IsDelete,
+		IsCreate:       record.IsCreate,
+		CreateRevision: record.CreateRevision,
+		WriteUUID:      uuid,
+	}
 	if err := f.byKeyAndRevision.Write(tr, &KeyAndRevision{Key: record.Key, Rev: newRev}, byKeyRevValue); err != nil {
-		return nil, err
+		return nil, uuid, err
 	}
 
 	if err := f.watch.Write(tr); err != nil {
-		return nil, err
+		return nil, uuid, err
 	}
 
-	return tr.GetVersionstamp(), nil
+	return tr.GetVersionstamp(), uuid, nil
 }

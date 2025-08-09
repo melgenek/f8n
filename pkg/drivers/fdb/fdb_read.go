@@ -98,7 +98,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 	// prefix=/registry/clusterroles/system:aggregate-to-edit, startKey=/registry/clusterroles/system:aggregate-to-edit
 
 	defer func() {
-		logrus.Errorf("listWithCollector (%s): prefix=%s, startKey=%s, maxRevision=%d => resRev=%d collector=%v resErr=%v", caller, prefix, startKey, maxRevision, resRev, collector, resErr)
+		logrus.Tracef("listWithCollector (%s): prefix=%s, startKey=%s, maxRevision=%d => resRev=%d collector=%v resErr=%v", caller, prefix, startKey, maxRevision, resRev, collector, resErr)
 	}()
 
 	var begin, end fdb.Selectable

@@ -1,6 +1,7 @@
 package fdb
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
@@ -54,6 +55,12 @@ func createDummyVersionstamp() tuple.Versionstamp {
 		versionstamp.TransactionVersion[i] = byte(i)
 	}
 	return versionstamp
+}
+
+func createUUID() tuple.UUID {
+	var b [16]byte
+	rand.Read(b[:])
+	return b
 }
 
 var zeroFuture fdb.FutureInt64 = ConstInt64Future{0}

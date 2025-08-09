@@ -16,6 +16,7 @@ type ByKeyAndRevisionValue struct {
 	IsCreate       bool
 	IsDelete       bool
 	CreateRevision tuple.Versionstamp
+	WriteUUID      tuple.UUID
 }
 
 type ByKeyAndRevisionRecord struct {
@@ -49,7 +50,7 @@ func (s *ByKeyAndRevisionSubspace) Write(tr *fdb.Transaction, key *KeyAndRevisio
 	if revisionKey, err := s.subspace.PackWithVersionstamp(tuple.Tuple{key.Key, key.Rev}); err != nil {
 		return err
 	} else {
-		tr.SetVersionstampedKey(revisionKey, tuple.Tuple{value.IsCreate, value.IsDelete, value.CreateRevision}.Pack())
+		tr.SetVersionstampedKey(revisionKey, tuple.Tuple{value.IsCreate, value.IsDelete, value.CreateRevision, value.WriteUUID}.Pack())
 		return nil
 	}
 }
@@ -79,9 +80,10 @@ func (s *ByKeyAndRevisionSubspace) parseKV(kv fdb.KeyValue) (*ByKeyAndRevisionRe
 	isCreate := unpackedTuple[0].(bool)
 	isDelete := unpackedTuple[1].(bool)
 	createRevision := unpackedTuple[2].(tuple.Versionstamp)
+	writeUUID := unpackedTuple[3].(tuple.UUID)
 	return &ByKeyAndRevisionRecord{
 			KeyAndRevision{Key: key, Rev: versionstamp},
-			ByKeyAndRevisionValue{IsCreate: isCreate, IsDelete: isDelete, CreateRevision: createRevision},
+			ByKeyAndRevisionValue{IsCreate: isCreate, IsDelete: isDelete, CreateRevision: createRevision, WriteUUID: writeUUID},
 		},
 		nil
 }

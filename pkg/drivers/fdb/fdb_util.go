@@ -22,7 +22,7 @@ func transact[T any](d fdb.Database, defaultValue T, f func(fdb.Transaction) (T,
 		if e != nil {
 			return defaultValue, fmt.Errorf("failed to set retry limit: %w", e)
 		}
-		
+
 		ret, e = f(tr)
 
 		if e == nil {
