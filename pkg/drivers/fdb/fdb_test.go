@@ -232,6 +232,7 @@ func TestFDB(t *testing.T) {
 }
 
 func TestFDBLargeRecords(t *testing.T) {
+	forceRetryTransaction = func(i int) bool { return false }
 	logrus.SetLevel(logrus.InfoLevel)
 
 	f := NewFdbStructured("VufDkgAW:O2dFQHXk@127.0.0.1:4689")
@@ -241,7 +242,7 @@ func TestFDBLargeRecords(t *testing.T) {
 	err := f.Start(ctx)
 	require.NoError(t, err)
 
-	recordCount := 5
+	recordCount := 43
 	recordSize := 8 * 1024 * 1024 // 8 MiB
 
 	// Create large records
@@ -258,26 +259,29 @@ func TestFDBLargeRecords(t *testing.T) {
 		assert.Greater(t, rev, int64(0))
 	}
 
-	//// Get each record individually
-	for key, value := range records {
-		_, kv, err := f.Get(ctx, key, "", 0, 0)
-		require.NoError(t, err)
-		require.NotNil(t, kv)
-		assert.Equal(t, key, kv.Key)
-		assert.True(t, bytes.Equal(value, kv.Value), "value for key %s does not match", key)
-	}
+	// Get record
+	_, kv, err := f.Get(ctx, "/large/key42", "", 0, 0)
+	require.NoError(t, err)
+	require.NotNil(t, kv)
+	assert.Equal(t, "/large/key42", kv.Key)
+	assert.True(t, bytes.Equal(records["/large/key42"], kv.Value), "value for key '/large/key42' does not match")
 
 	// List all records
 	_, kvs, err := f.List(ctx, "/large/", "/large/", 0, 0)
 	require.NoError(t, err)
-	assert.Len(t, kvs, recordCount)
+	require.Len(t, kvs, recordCount)
+
+	// Count all records
+	_, count, err := f.Count(ctx, "/large/", "/large/", 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(recordCount), count)
 
 	// Verify listed records
 	listedRecords := make(map[string][]byte)
 	for _, kv := range kvs {
 		listedRecords[kv.Key] = kv.Value
 	}
-	assert.Equal(t, records, listedRecords, "listed records do not match created records")
+	require.Equal(t, records, listedRecords, "listed records do not match created records")
 
 	// Delete one record
 	keyToDelete := "/large/key1"
@@ -287,7 +291,7 @@ func TestFDBLargeRecords(t *testing.T) {
 	delete(records, keyToDelete)
 
 	// Verify it's gone with Get
-	_, kv, err := f.Get(ctx, keyToDelete, "", 0, 0)
+	_, kv, err = f.Get(ctx, keyToDelete, "", 0, 0)
 	require.NoError(t, err)
 	require.Nil(t, kv, "deleted record should not be found with Get")
 

@@ -50,7 +50,7 @@ func (b *FdbLogger) Create(ctx context.Context, key string, value []byte, lease 
 	defer func() {
 		dur := time.Since(start)
 		fStr := "CREATE %s, size=%d, lease=%d => rev=%d, err=%v, duration=%s"
-		b.logMethod(10000*time.Millisecond, fStr, key, len(value), lease, revRet, errRet, dur)
+		b.logMethod(dur, fStr, key, len(value), lease, revRet, errRet, dur)
 	}()
 
 	return b.backend.Create(ctx, key, value, lease)
@@ -61,7 +61,7 @@ func (b *FdbLogger) Update(ctx context.Context, key string, value []byte, revisi
 	defer func() {
 		dur := time.Since(start)
 		fStr := "UPDATE %s, value=%d, rev=%d, lease=%v => rev=%d, updated=%v, err=%v, duration=%s"
-		b.logMethod(1000*time.Millisecond, fStr, key, len(value), revision, lease, revRet, updateRet, errRet, dur)
+		b.logMethod(dur, fStr, key, len(value), revision, lease, revRet, updateRet, errRet, dur)
 	}()
 
 	return b.backend.Update(ctx, key, value, revision, lease)
@@ -72,7 +72,7 @@ func (b *FdbLogger) Delete(ctx context.Context, key string, revision int64) (rev
 	defer func() {
 		dur := time.Since(start)
 		fStr := "DELETE %s, rev=%d => rev=%d, kv=%v, deleted=%v, err=%v, duration=%s"
-		b.logMethod(1000*time.Millisecond, fStr, key, revision, revRet, kvRet != nil, deletedRet, errRet, dur)
+		b.logMethod(dur, fStr, key, revision, revRet, kvRet != nil, deletedRet, errRet, dur)
 	}()
 
 	return b.backend.Delete(ctx, key, revision)
@@ -104,12 +104,10 @@ func (b *FdbLogger) Watch(ctx context.Context, prefix string, revision int64) se
 	return b.backend.Watch(ctx, prefix, revision)
 }
 
-// DbSize get the kineBucket size from JetStream.
 func (b *FdbLogger) DbSize(ctx context.Context) (int64, error) {
 	return b.backend.DbSize(ctx)
 }
 
-// CurrentRevision returns the current revision of the database.
 func (b *FdbLogger) CurrentRevision(ctx context.Context) (revRet int64, errRet error) {
 	start := time.Now()
 	defer func() {
@@ -120,7 +118,6 @@ func (b *FdbLogger) CurrentRevision(ctx context.Context) (revRet int64, errRet e
 	return b.backend.CurrentRevision(ctx)
 }
 
-// Compact is a no-op / not implemented. Revision history is managed by the jetstream bucket.
-func (b *FdbLogger) Compact(ctx context.Context, revision int64) (int64, error) {
+func (b *FdbLogger) Compact(_ context.Context, revision int64) (int64, error) {
 	return revision, nil
 }

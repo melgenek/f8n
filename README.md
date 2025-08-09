@@ -44,10 +44,11 @@ The implementation is in the `pkg/drivers/fdb` directory.
 ## TODO
 
 Here is a list of implementation details that need to be completed before starting scale testing of this implementation.
-- [ ] List operation has to account for long running or large transactions. Make sure that in such case there are multiple consequitive FDB transactions. 
+- [ ] Watch operation has to account for long-running or large transactions. Make sure that in such case there are multiple consecutive FDB transactions. 
+- [ ] list operation for big values should work with multiple transaction retries. 
 - [ ] Implement compaction
 - [ ] put ttl events into a separate slice
-- [ ] make sure that write operations are idempotent
+- [ ] limit records to 2MiB
 
 ## Useful readings
 
@@ -86,7 +87,6 @@ Here is a list of implementation details that need to be completed before starti
 - https://forums.foundationdb.org/t/use-of-setreadversion/3696/2
 - https://forums.foundationdb.org/t/changes-feed-without-hot-keys/1057/2
 - https://forums.foundationdb.org/t/variable-chunk-size-for-blobs/1174/2
-- https://web.archive.org/web/20150325020408/http://community.foundationdb.com/questions/4118/future-version.html
 - https://github.com/apple/foundationdb/wiki/Transaction-size-limit
 - https://forums.foundationdb.org/t/relax-consistency-guarantees/1560/19
 - https://forums.foundationdb.org/t/generating-sortable-unique-id-primary-key-across-the-cluster-in-an-entity-relationship-model/3789/2

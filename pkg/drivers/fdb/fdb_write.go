@@ -83,13 +83,13 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 		if lastRecord != nil {
 			if lastRecord.Value.IsCreate {
 				if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
-					logrus.Errorf("Create succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
+					logrus.Tracef("Create succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
 					return newModificationResultRev(tr.GetReadVersion(), nil, true), err
 				} else {
 					return newModificationResultRev(zeroFuture, nil, false), server.ErrKeyExists
 				}
 			} else if !lastRecord.Value.IsDelete {
-				logrus.Errorf("The key '%s' already exists, prevRev=%+v", key, lastRecord.Key.Rev)
+				logrus.Tracef("The key '%s' already exists, prevRev=%+v", key, lastRecord.Key.Rev)
 				return newModificationResultRev(zeroFuture, nil, false), server.ErrKeyExists
 			}
 			createRecord.PrevRevision = lastRecord.Key.Rev
@@ -127,7 +127,7 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 			if record, err := f.byRevision.Get(&tr, lastRecord.Key.Rev); err != nil {
 				return newModificationResultRev(zeroFuture, nil, false), err
 			} else if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
-				logrus.Errorf("Update succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
+				logrus.Tracef("Update succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
 				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, true), nil
 			} else {
 				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), err
@@ -216,6 +216,7 @@ func (f *FDB) append(tr *fdb.Transaction, record *Record) (fdb.FutureKey, tuple.
 	byKeyRevValue := &ByKeyAndRevisionValue{
 		IsDelete:       record.IsDelete,
 		IsCreate:       record.IsCreate,
+		ValueSize:      record.ValueSize,
 		CreateRevision: record.CreateRevision,
 		WriteUUID:      uuid,
 	}

@@ -53,7 +53,9 @@ func (f *FDB) Get(_ context.Context, key, rangeEnd string, limit, revision int64
 func (f *FDB) getLast(tr *fdb.Transaction, key string) (*ByKeyAndRevisionRecord, error) {
 	keyRange := f.byKeyAndRevision.GetSubspace().Sub(key)
 	it := tr.GetRange(keyRange, fdb.RangeOptions{Limit: 1, Mode: fdb.StreamingModeExact, Reverse: true}).Iterator()
-
+	if !it.Advance() {
+		return nil, nil
+	}
 	keyAndRevRecord, err := f.byKeyAndRevision.GetFromIterator(it)
 	if err != nil {
 		return nil, err
@@ -72,6 +74,32 @@ func (f *FDB) Count(_ context.Context, prefix, startKey string, revision int64) 
 	}
 }
 
+type countCollector struct {
+	totalCount int64
+	batchCount int64
+}
+
+func (c *countCollector) startBatch() {
+	c.batchCount = 0
+}
+
+func (c *countCollector) next(*fdb.Transaction, *ByKeyAndRevisionRecord) (fdb.KeyConvertible, bool, error) {
+	c.batchCount++
+	return nil, true, nil
+}
+
+func (c *countCollector) endBatch(*fdb.Transaction, bool) error {
+	return nil
+}
+
+func (c *countCollector) appendBatchToResult() {
+	c.totalCount += c.batchCount
+}
+
+func (c *countCollector) String() string {
+	return fmt.Sprintf("{count=%d}", c.totalCount)
+}
+
 func (f *FDB) listKeyValue(caller, prefix, startKey string, limit, maxRevision int64) (resRev int64, resEvents []*server.KeyValue, resErr error) {
 	collector := newListCollector(f, limit)
 	rev, err := f.listWithCollector(caller, prefix, startKey, maxRevision, collector)
@@ -86,7 +114,161 @@ func (f *FDB) listKeyValue(caller, prefix, startKey string, limit, maxRevision i
 	return rev, kvs, nil
 }
 
-func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int64, collector Collector) (resRev int64, resErr error) {
+type listCollector struct {
+	f                  *FDB
+	limit              int64
+	records            []*RevRecord
+	batchIterators     []*fdb.RangeIterator
+	batchIteratorsSize int64
+	batchRecords       []*RevRecord
+}
+
+func newListCollector(f *FDB, limit int64) *listCollector {
+	capacity := limit
+	if capacity == 0 {
+		capacity = 100
+	}
+	return &listCollector{
+		f:              f,
+		limit:          limit,
+		records:        make([]*RevRecord, 0, capacity),
+		batchIterators: make([]*fdb.RangeIterator, 0, capacity),
+		batchRecords:   make([]*RevRecord, 0, capacity),
+	}
+}
+
+func (c *listCollector) startBatch() {
+	c.batchIterators = c.batchIterators[len(c.batchIterators):]
+	c.batchRecords = c.batchRecords[len(c.batchRecords):]
+	c.batchIteratorsSize = 0
+}
+
+func (c *listCollector) next(tr *fdb.Transaction, record *ByKeyAndRevisionRecord) (fdb.KeyConvertible, bool, error) {
+	recordIt, err := c.f.byRevision.GetIterator(tr, record.Key.Rev)
+	if err != nil {
+		return nil, false, err
+	}
+	c.batchIterators = append(c.batchIterators, recordIt)
+	c.batchIteratorsSize += record.Value.ValueSize
+
+	if c.batchIteratorsSize > 10*1024*1024 {
+		if err := c.fetchIterators(); err != nil {
+			return nil, false, err
+		}
+	}
+	return nil, c.needMore(), nil
+}
+
+func (c *listCollector) needMore() bool {
+	return c.limit == 0 || int64(len(c.batchIterators)+len(c.records)) < c.limit
+}
+
+func (c *listCollector) endBatch(*fdb.Transaction, bool) error {
+	return c.fetchIterators()
+}
+
+func (c *listCollector) fetchIterators() error {
+	for _, it := range c.batchIterators {
+		rev, record, err := c.f.byRevision.GetFromIterator(it)
+		if err != nil {
+			return err
+		}
+		if record == nil {
+			return fmt.Errorf("record is nil for revision %d", rev)
+		}
+		c.batchRecords = append(c.batchRecords, &RevRecord{Rev: rev, Record: record})
+	}
+	c.batchIterators = c.batchIterators[len(c.batchIterators):]
+	c.batchIteratorsSize = 0
+	return nil
+}
+
+func (c *listCollector) appendBatchToResult() {
+	for _, record := range c.batchRecords {
+		c.records = append(c.records, record)
+	}
+}
+
+func (c *listCollector) String() string {
+	return fmt.Sprintf("{records=%d,batchRecords=%d}", len(c.records), len(c.batchRecords))
+}
+
+type recordCollector struct {
+	f                  *FDB
+	maxRevision        int64
+	inner              Collector[*ByKeyAndRevisionRecord]
+	currentRecord      *ByKeyAndRevisionRecord
+	rev                int64
+	batchCurrentRecord *ByKeyAndRevisionRecord
+	batchRev           int64
+}
+
+func newRecordCollector(f *FDB, maxRevision int64, inner Collector[*ByKeyAndRevisionRecord]) *recordCollector {
+	return &recordCollector{
+		f:           f,
+		maxRevision: maxRevision,
+		inner:       inner,
+	}
+}
+
+func (c *recordCollector) startBatch() {
+	c.inner.startBatch()
+	c.batchCurrentRecord = c.currentRecord
+	c.batchRev = 0
+}
+
+func (c *recordCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.KeyConvertible, bool, error) {
+	nextKeyAndRevRecord, err := c.f.byKeyAndRevision.GetFromIterator(it)
+	if err != nil {
+		return nil, false, err
+	}
+	if c.batchCurrentRecord != nil && c.batchCurrentRecord.Key.Key != nextKeyAndRevRecord.Key.Key {
+		if !c.batchCurrentRecord.Value.IsDelete {
+			if _, _, err := c.inner.next(tr, c.batchCurrentRecord); err != nil {
+				return nil, false, err
+			}
+		}
+		c.batchCurrentRecord = nil
+	}
+
+	if c.maxRevision == 0 || versionstampToInt64(nextKeyAndRevRecord.Key.Rev) <= c.maxRevision {
+		c.batchCurrentRecord = nextKeyAndRevRecord
+	}
+
+	return c.f.byKeyAndRevision.GetSubspace().Pack(tuple.Tuple{nextKeyAndRevRecord.Key.Key, nextKeyAndRevRecord.Key.Rev}), true, nil
+}
+
+func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
+	if isLast && c.batchCurrentRecord != nil && !c.batchCurrentRecord.Value.IsDelete {
+		if _, _, err := c.inner.next(tr, c.batchCurrentRecord); err != nil {
+			return err
+		}
+	}
+
+	if err := c.inner.endBatch(tr, isLast); err != nil {
+		return err
+	}
+
+	if rev, err := tr.GetReadVersion().Get(); err != nil {
+		return err
+	} else {
+		c.batchRev = rev
+	}
+
+	return nil
+}
+
+func (c *recordCollector) appendBatchToResult() {
+	c.inner.appendBatchToResult()
+	c.rev = c.batchRev
+	c.currentRecord = c.batchCurrentRecord
+}
+
+func (c *recordCollector) String() string {
+	return fmt.Sprintf("{rev=%d, currentRecord=%v, inner=%v}", c.rev, c.currentRecord, c.inner)
+}
+
+func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int64, collector Collector[*ByKeyAndRevisionRecord]) (resRev int64, resErr error) {
 	// Examples:
 	// prefix=/bootstrap/, startKey=/bootstrap
 	// prefix=/registry/secrets/, startKey=/registry/secrets/
@@ -135,62 +317,15 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 		begin, end = k.FDBRangeKeySelectors()
 	}
 
-	rev, err := transact(f.db, 0, func(tr fdb.Transaction) (int64, error) {
-		it := tr.GetRange(fdb.SelectorRange{Begin: begin, End: end}, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
-
-		collector.initBatch()
-		var currentRecord *ByKeyAndRevisionRecord = nil
-		for collector.canAppendMoreToBatch() && it.Advance() {
-			nextKeyAndRevRecord, err := f.byKeyAndRevision.GetFromIterator(it)
-			if err != nil {
-				return 0, err
-			}
-
-			if nextKeyAndRevRecord == nil {
-				break
-			}
-
-			if currentRecord != nil && currentRecord.Key.Key != nextKeyAndRevRecord.Key.Key {
-				if !currentRecord.Value.IsDelete {
-					if err := collector.appendToBatch(&tr, currentRecord); err != nil {
-						return 0, err
-					}
-				}
-				currentRecord = nil
-			}
-
-			if maxRevision == 0 || versionstampToInt64(nextKeyAndRevRecord.Key.Rev) <= maxRevision {
-				currentRecord = nextKeyAndRevRecord
-			}
-		}
-
-		if currentRecord != nil && !currentRecord.Value.IsDelete {
-			if !currentRecord.Value.IsDelete {
-				if err := collector.appendToBatch(&tr, currentRecord); err != nil {
-					return 0, err
-				}
-			}
-		}
-
-		if err := collector.finalizeBatch(); err != nil {
-			return 0, err
-		}
-
-		if rev, err := tr.GetReadVersion().Get(); err != nil {
-			return 0, err
-		} else {
-			return rev, nil
-		}
-	})
-	collector.appendBatchToResult()
-
+	rc := newRecordCollector(f, maxRevision, collector)
+	err := collectRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, rc)
 	if err != nil {
 		return 0, err
 	}
 
-	if maxRevision > rev {
-		return rev, server.ErrFutureRev
+	if maxRevision > rc.rev {
+		return rc.rev, server.ErrFutureRev
 	}
 
-	return rev, nil
+	return rc.rev, nil
 }
