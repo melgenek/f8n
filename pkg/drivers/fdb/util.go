@@ -20,10 +20,6 @@ func revRecordToEvent(revRecord *RevRecord) *server.Event {
 			Value:          revRecord.Record.Value,
 		},
 	}
-	if event.Create {
-		event.KV.CreateRevision = event.KV.ModRevision
-		event.PrevKV = nil
-	}
 	if revRecord.Record.PrevRevision != dummyVersionstamp {
 		event.PrevKV = &server.KeyValue{
 			ModRevision: versionstampToInt64(revRecord.Record.PrevRevision),

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/sync/errgroup"
 	"slices"
 	"testing"
 	"time"
@@ -27,6 +28,13 @@ func TestFDB(t *testing.T) {
 	defer cancelCtx()
 
 	err := f.Start(ctx)
+	require.NoError(t, err)
+
+	createLargeRecords(t, f, ctx, 500)
+	cancelCtx()
+	ctx, cancelCtx = context.WithTimeout(context.Background(), time.Duration(20)*time.Second)
+	defer cancelCtx()
+	err = f.Start(ctx)
 	require.NoError(t, err)
 
 	watchAll := f.Watch(ctx, "/abc/", 0)
@@ -200,9 +208,9 @@ func TestFDB(t *testing.T) {
 	require.Equal(t, rev, currentRev)
 
 	for i := 0; i < len(history); {
-		fmt.Printf("Watch %d\n", i)
 		select {
 		case watchedEvents := <-watchAll.Events:
+			fmt.Printf("Watched %v\n", watchedEvents)
 			for _, watchedEvent := range watchedEvents {
 				if i == len(history) {
 					require.Fail(t, "I: %d", i)
@@ -232,7 +240,7 @@ func TestFDB(t *testing.T) {
 }
 
 func TestFDBLargeRecords(t *testing.T) {
-	forceRetryTransaction = func(i int) bool { return false }
+	forceRetryTransaction = func(i int) bool { return i < 2 }
 	logrus.SetLevel(logrus.InfoLevel)
 
 	f := NewFdbStructured("VufDkgAW:O2dFQHXk@127.0.0.1:4689")
@@ -242,22 +250,8 @@ func TestFDBLargeRecords(t *testing.T) {
 	err := f.Start(ctx)
 	require.NoError(t, err)
 
-	recordCount := 43
-	recordSize := 8 * 1024 * 1024 // 8 MiB
-
-	// Create large records
-	records := make(map[string][]byte)
-	for i := 0; i < recordCount; i++ {
-		key := fmt.Sprintf("/large/key%d", i)
-		value := make([]byte, recordSize)
-		_, err := rand.Read(value)
-		require.NoError(t, err)
-		records[key] = value
-
-		rev, err := f.Create(ctx, key, value, 0)
-		require.NoError(t, err)
-		assert.Greater(t, rev, int64(0))
-	}
+	recordCount := 300
+	records := createLargeRecords(t, f, ctx, recordCount)
 
 	// Get record
 	_, kv, err := f.Get(ctx, "/large/key42", "", 0, 0)
@@ -269,7 +263,7 @@ func TestFDBLargeRecords(t *testing.T) {
 	// List all records
 	_, kvs, err := f.List(ctx, "/large/", "/large/", 0, 0)
 	require.NoError(t, err)
-	require.Len(t, kvs, recordCount)
+	require.Equal(t, recordCount, len(kvs))
 
 	// Count all records
 	_, count, err := f.Count(ctx, "/large/", "/large/", 0)
@@ -305,6 +299,34 @@ func TestFDBLargeRecords(t *testing.T) {
 		listedRecordsAfterDelete[kv.Key] = kv.Value
 	}
 	require.Equal(t, records, listedRecordsAfterDelete, "listed records after delete do not match expected")
+}
+
+func createLargeRecords(t *testing.T, f server.Backend, ctx context.Context, recordCount int) map[string][]byte {
+	recordSize := 2 * 1024 * 1024 // 2 MiB
+
+	g := errgroup.Group{}
+	g.SetLimit(50)
+	records := make(map[string][]byte, recordCount)
+	for i := 0; i < recordCount; i++ {
+		key := fmt.Sprintf("/large/key%d", i)
+		value := make([]byte, recordSize)
+		_, err := rand.Read(value)
+		require.NoError(t, err)
+		records[key] = value
+		v := func(key string, value []byte) (e error) {
+			rev, err := f.Create(ctx, key, value, 0)
+			if err != nil {
+				return err
+			}
+			if rev <= 0 {
+				return fmt.Errorf("expected positive revision for key %s, got %d", key, rev)
+			}
+			return nil
+		}
+		g.Go(func() error { return v(key, value) })
+	}
+	require.NoError(t, g.Wait())
+	return records
 }
 
 func orEmpty(result []*server.KeyValue) []*server.KeyValue {

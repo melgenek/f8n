@@ -84,7 +84,11 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 			if lastRecord.Value.IsCreate {
 				if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
 					logrus.Tracef("Create succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
-					return newModificationResultRev(tr.GetReadVersion(), nil, true), err
+					return newModificationResultRev(
+						ConstInt64Future{versionstampToInt64(lastRecord.Key.Rev)},
+						nil,
+						true,
+					), err
 				} else {
 					return newModificationResultRev(zeroFuture, nil, false), server.ErrKeyExists
 				}
@@ -128,7 +132,11 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 				return newModificationResultRev(zeroFuture, nil, false), err
 			} else if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
 				logrus.Tracef("Update succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
-				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, true), nil
+				return newModificationResultRev(
+					ConstInt64Future{versionstampToInt64(lastRecord.Key.Rev)},
+					&RevRecord{Rev: lastRecord.Key.Rev, Record: record},
+					true,
+				), nil
 			} else {
 				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), err
 			}
@@ -216,7 +224,6 @@ func (f *FDB) append(tr *fdb.Transaction, record *Record) (fdb.FutureKey, tuple.
 	byKeyRevValue := &ByKeyAndRevisionValue{
 		IsDelete:       record.IsDelete,
 		IsCreate:       record.IsCreate,
-		ValueSize:      record.ValueSize,
 		CreateRevision: record.CreateRevision,
 		WriteUUID:      uuid,
 	}

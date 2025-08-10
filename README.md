@@ -90,5 +90,6 @@ Here is a list of implementation details that need to be completed before starti
 - https://github.com/apple/foundationdb/wiki/Transaction-size-limit
 - https://forums.foundationdb.org/t/relax-consistency-guarantees/1560/19
 - https://forums.foundationdb.org/t/generating-sortable-unique-id-primary-key-across-the-cluster-in-an-entity-relationship-model/3789/2
+- https://forums.foundationdb.org/t/foundationdb-read-performance/729/4
 - 
 
