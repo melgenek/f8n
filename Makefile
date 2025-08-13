@@ -10,5 +10,5 @@ build:
 
 .PHONY: e2e-test
 e2e-test:
-	docker-compose up -d --force-recreate --build
+	docker compose up -d --force-recreate --build
 	./tests/test.sh
