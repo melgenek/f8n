@@ -33,23 +33,6 @@
 Session.vim
 .netrwhist
 
-# cscope-related files
-cscope.*
-
-# JUnit test output from ginkgo e2e tests
-/junit*.xml
-
-# Mercurial files
-**/.hg
-**/.hg*
-
-# Vagrant
-.vagrant
-network_closure.sh
-
-# This file used by some vendor repos (e.g. github.com/go-openapi/...) to store secret variables and should not be ignored
-!\.drone\.sec
-
 # Godeps workspace
 /Godeps/_workspace
 
@@ -59,12 +42,6 @@ network_closure.sh
 # Go vendor files
 vendor/
 
-# kine database file
-db/
-
 # build artifacts
 bin/
 dist/
-
-# dapper binaries
-.dapper

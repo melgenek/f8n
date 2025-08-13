@@ -8,7 +8,6 @@ export -f start-test
 
 LABEL=fdb run-test
 
-
 start-fdb() {
       docker container run \
           -d --name "local-fdb" \

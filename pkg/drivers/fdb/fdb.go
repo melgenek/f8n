@@ -19,10 +19,6 @@ func New(_ context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
 	return false, NewFdbStructured(cfg.DataSourceName), nil
 }
 
-func init() {
-	drivers.Register("fdb", New)
-}
-
 type FDB struct {
 	connectionString string
 	db               fdb.Database

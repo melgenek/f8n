@@ -1,0 +1,25 @@
+#!/bin/bash
+# Builds kine for multiple platforms and os
+# Intended to be run within a buildx container that provides the --platform flag
+# Also needed are the tonistiigi/xx build tools
+set -ex
+
+source $(dirname $0)/version
+
+cd $(dirname $0)/..
+
+mkdir -p bin
+
+# If not linux, add the os to the binary name
+if [ "$TARGETOS" != "linux" ]; then
+    OPT_OS="-${TARGETOS}"
+fi
+
+if [ "$TARGETOS" = "linux" ]; then
+    OTHER_LINKFLAGS="-extldflags -s"
+fi
+LINKFLAGS="-X github.com/melgenek/f8n/pkg/version.Version=$VERSION"
+LINKFLAGS="-X github.com/melgenek/f8n/pkg/version.GitCommit=$COMMIT $LINKFLAGS"
+
+echo Building Multiplatform f8n ${VERSION}
+xx-go build -ldflags "$LINKFLAGS $OTHER_LINKFLAGS" -o bin/f8n

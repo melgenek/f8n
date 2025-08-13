@@ -3,15 +3,21 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/k3s-io/kine/pkg/drivers"
+	"github.com/melgenek/f8n/pkg/drivers/fdb"
 	"os"
 
-	"github.com/k3s-io/kine/pkg/app"
+	kine "github.com/k3s-io/kine/pkg/app"
 	"github.com/sirupsen/logrus"
 )
 
+func init() {
+	drivers.Register("fdb", fdb.New)
+}
+
 func main() {
 	logrus.SetLevel(logrus.WarnLevel)
-	app := app.New()
+	app := kine.New()
 	if err := app.Run(os.Args); err != nil {
 		if !errors.Is(err, context.Canceled) {
 			logrus.Fatal(err)

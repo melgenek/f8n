@@ -1,63 +1,51 @@
-FROM ubuntu:24.10 AS infra
-ARG ARCH=amd64
+# --- xx tool stage ---
+FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
 
-
-RUN apt update && apt install -y wget git build-essential
-
-RUN wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz \
-    && tar -C /usr/local/ -xzvf go1.23.4.linux-amd64.tar.gz
-ENV PATH=/usr/local/go/bin:$PATH
-
-# go imports version gopls/v0.15.3
-# https://github.com/golang/tools/releases/latest
-RUN go install golang.org/x/tools/cmd/goimports@cd70d50baa6daa949efa12e295e10829f3a7bd46
-RUN rm -rf /go/src /go/pkg
-RUN if [ "${ARCH}" == "amd64" ]; then \
-    curl -sL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s;  \
-    fi
-
-RUN mkdir /var/lib/foundationdb && \
-    wget https://github.com/apple/foundationdb/releases/download/7.3.57/foundationdb-clients_7.3.57-1_amd64.deb \
-    && dpkg -i foundationdb-clients_7.3.57-1_amd64.deb
-
-ENV SRC_DIR=/go/src/github.com/k3s-io/kine
-WORKDIR ${SRC_DIR}/
-
-# Validate needs everything in the project, so we separate it out for better caching
-FROM infra AS validate
-ARG SKIP_VALIDATE
-ENV SKIP_VALIDATE=${SKIP_VALIDATE}
-COPY . .
-RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
-    --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
-    --mount=type=cache,id=lint,target=/root/.cache/golangci-lint \
-    ./scripts/validate
-
-FROM infra AS build
-ARG CROSS
+# --- multi-arch build stage ---
+FROM --platform=$BUILDPLATFORM golang:1.24-bookworm AS multi-arch-build
+COPY --from=xx / /
 ARG TAG
-ARG DRONE_TAG
-ARG ARCH=amd64
-ENV ARCH=${ARCH}
+ARG TARGETOS
+ARG TARGETARCH
+ENV TAG=${TAG} CGO_ENABLED=1
 
-COPY ./scripts/build ./scripts/version ./scripts/
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget clang lld \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV SRC_DIR=/go/src/github.com/melgenek/f8n
+WORKDIR ${SRC_DIR}/
+COPY ./scripts/buildx ./scripts/version ./scripts/
 COPY ./go.mod ./go.sum ./main.go ./
 COPY ./pkg ./pkg
 COPY ./.git ./.git
 COPY ./.golangci.json ./.golangci.json
 
-RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
-    --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
-    ./scripts/build
+ARG FDB_VERSION=7.3.69
+RUN if [ "${TARGETARCH}" = "amd64" ]; then \
+      FDB_ARCH="amd64"; \
+    elif [ "${TARGETARCH}" = "arm64" ]; then \
+      FDB_ARCH="aarch64"; \
+    else \
+      echo "Unsupported architecture: ${TARGETARCH}"; \
+      exit 1; \
+    fi \
+    && wget "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_${FDB_ARCH}.deb" \
+    && dpkg -i foundationdb-clients_${FDB_VERSION}-1_${FDB_ARCH}.deb
 
-FROM ubuntu:24.10 AS binary
-ENV SRC_DIR=/go/src/github.com/k3s-io/kine
-COPY --from=build ${SRC_DIR}/bin /bin
-RUN mkdir /db && chown nobody /db
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
+    ./scripts/buildx
+
+# --- multi-arch package stage ---
+FROM debian:bookworm-slim AS multi-arch-package
+ARG TARGETARCH
+ENV ARCH=${TARGETARCH}
+
+COPY --from=multi-arch-build /go/src/github.com/melgenek/f8n/bin/f8n /bin/f8n
+COPY --from=multi-arch-build /usr/lib/libfdb* /usr/lib/
+COPY --from=multi-arch-build /usr/include/foundationdb/ /usr/include/foundationdb/
+RUN mkdir /db && chown nobody:nogroup /db
 VOLUME /db
 EXPOSE 2379/tcp
 USER nobody
-ENTRYPOINT ["/bin/kine"]
-
-COPY --from=build /usr/include/foundationdb/fdb_c.h /usr/include/foundationdb/fdb_c.h
-COPY --from=build /usr/lib/libfdb_c.so /usr/lib/libfdb_c.so
+ENTRYPOINT ["/bin/f8n"]
