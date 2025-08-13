@@ -6,7 +6,7 @@ toolchain go1.24.5
 
 require (
 	github.com/Rican7/retry v0.3.1 // indirect
-	github.com/apple/foundationdb/bindings/go v0.0.0-20241120003019-63035b5c3ecb // go get github.com/apple/foundationdb/bindings/go@7.3.57
+	github.com/apple/foundationdb/bindings/go v0.0.0-20250702211439-37fcf1c8ce08 // go get github.com/apple/foundationdb/bindings/go@7.3.66
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20240316143900-6e2875d9b438 // indirect
 	github.com/jackc/pgx/v5 v5.7.5 // indirect

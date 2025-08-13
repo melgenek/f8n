@@ -1,0 +1,16 @@
+FROM golang:1.22-alpine3.20
+
+ARG ARCH=arm64
+
+RUN apk -U add bash coreutils git gcc musl-dev vim less curl wget ca-certificates
+RUN apk -U add docker-cli file findutils py3-pip && \
+    pip install --break-system-packages kubernetes termplotlib==v0.3.4
+
+ENV KINE_SOURCE=/go/src/github.com/k3s-io/kine/
+ENV HOME=${KINE_SOURCE}
+WORKDIR ${KINE_SOURCE}
+
+COPY . ${KINE_SOURCE}
+
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["./test-load.sh"]

@@ -16,6 +16,7 @@ var (
 )
 
 func New(_ context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
+	logrus.Infof("Net FDB backend. Config: %+v", cfg)
 	return false, NewFdbStructured(cfg.DataSourceName), nil
 }
 

@@ -3,12 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	kine "github.com/k3s-io/kine/pkg/app"
 	"github.com/k3s-io/kine/pkg/drivers"
 	"github.com/melgenek/f8n/pkg/drivers/fdb"
-	"os"
-
-	kine "github.com/k3s-io/kine/pkg/app"
 	"github.com/sirupsen/logrus"
+	"os"
 )
 
 func init() {
@@ -16,7 +15,7 @@ func init() {
 }
 
 func main() {
-	logrus.SetLevel(logrus.WarnLevel)
+	logrus.SetLevel(logrus.InfoLevel)
 	app := kine.New()
 	if err := app.Run(os.Args); err != nil {
 		if !errors.Is(err, context.Canceled) {

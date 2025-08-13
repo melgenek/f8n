@@ -14,8 +14,8 @@ github.com/Rican7/retry v0.3.1/go.mod h1:CxSDrhAyXmTMeEuRAnArMu1FHu48vtfjLREWqVl
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/antithesishq/antithesis-sdk-go v0.4.3-default-no-op h1:+OSa/t11TFhqfrX0EOSqQBDJ0YlpmK0rDSiB19dg9M0=
 github.com/antithesishq/antithesis-sdk-go v0.4.3-default-no-op/go.mod h1:IUpT2DPAKh6i/YhSbt6Gl3v2yvUZjmKncl7U91fup7E=
-github.com/apple/foundationdb/bindings/go v0.0.0-20241120003019-63035b5c3ecb h1:0topddJgxrWdN/QiXhj5Njqy6J0Dm/IeF5bxzoW/RPw=
-github.com/apple/foundationdb/bindings/go v0.0.0-20241120003019-63035b5c3ecb/go.mod h1:OMVSB21p9+xQUIqlGizHPZfjK+SHws1ht+ZytVDoz9U=
+github.com/apple/foundationdb/bindings/go v0.0.0-20250702211439-37fcf1c8ce08 h1:FBu5q43+8pMQO5IgC+anjjz+3djUWg2jfCp7rz+IyWM=
+github.com/apple/foundationdb/bindings/go v0.0.0-20250702211439-37fcf1c8ce08/go.mod h1:OMVSB21p9+xQUIqlGizHPZfjK+SHws1ht+ZytVDoz9U=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cenkalti/backoff/v4 v4.2.1 h1:y4OZtCnogmCPw98Zjyt5a6+QwPLGkiQsYW5oUqylYbM=

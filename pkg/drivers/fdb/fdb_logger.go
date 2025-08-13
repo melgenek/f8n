@@ -27,7 +27,9 @@ func (b *FdbLogger) logMethod(dur time.Duration, str string, args ...any) {
 
 func (b *FdbLogger) Start(ctx context.Context) error {
 	logrus.Infof("Starting backend")
-	return b.backend.Start(ctx)
+	err := b.backend.Start(ctx)
+	logrus.Infof("Started backend. Err: %v", err)
+	return err
 }
 
 func (b *FdbLogger) Get(ctx context.Context, key, rangeEnd string, limit, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
