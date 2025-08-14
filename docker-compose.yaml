@@ -8,12 +8,13 @@ services:
           while [ ! -f /var/fdb/fdb.cluster ]; do
             sleep 0.1
           done
-          if ! fdbcli --exec status --timeout 3 ; then
-              echo "creating the database"
-              if ! fdbcli --exec "configure single ssd ; status" --timeout 10 ; then 
-                  echo "Unable to configure new FDB cluster."
-                  exit 1
-              fi
+          echo "creating the database"
+          if ! fdbcli --exec "configure new single ssd ; status" --timeout 10 ; then 
+              echo "Unable to configure new FDB cluster."
+              exit 1
+          elif ! fdbcli --exec "configure single ssd ; status" --timeout 10 ; then
+              echo "Unable to configure existing FDB cluster."
+              exit 1
           fi
         '
   f8n:
