@@ -1,34 +1,25 @@
 services:
   fdb:
     container_name: fdb
-    image: foundationdb/foundationdb:7.3.69
-    platform: "linux/amd64"
-    environment:
-      FDB_COORDINATOR: fdb
-      FDB_NETWORKING_MODE: container
-      FDB_COORDINATOR_PORT: 4500
-      FDB_PORT: 4500
-  fdb_setup:
-    container_name: fdb_setup
-    image: foundationdb/foundationdb:7.3.69
-    environment:
-      FDB_COORDINATOR: fdb
-      FDB_COORDINATOR_PORT: 4500
-    entrypoint: >
-      bash -c '
-        echo docker:docker@fdb:4500 > /var/fdb/fdb.cluster
-        if ! fdbcli --exec status --timeout 3 ; then
-            echo "creating the database"
-            if ! fdbcli --exec "configure new single ssd ; status" --timeout 10 ; then 
-                echo "Unable to configure new FDB cluster."
-                exit 1
-            fi
-        fi
-      '
+    image: ghcr.io/melgenek/f8n/foundationdb:7.3.69
+    post_start:
+     - command: >
+        bash -c '
+          while [ ! -f /var/fdb/fdb.cluster ]; do
+            sleep 0.1
+          done
+          if ! fdbcli --exec status --timeout 3 ; then
+              echo "creating the database"
+              if ! fdbcli --exec "configure single ssd ; status" --timeout 10 ; then 
+                  echo "Unable to configure new FDB cluster."
+                  exit 1
+              fi
+          fi
+        '
   f8n:
     container_name: f8n
     depends_on:
-      - fdb_setup
+      - fdb
     build:
       context: .
       dockerfile: Dockerfile

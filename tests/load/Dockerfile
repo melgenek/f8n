@@ -13,4 +13,4 @@ WORKDIR ${KINE_SOURCE}
 COPY . ${KINE_SOURCE}
 
 ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["./test-load.sh"]
+CMD ["./script.sh"]

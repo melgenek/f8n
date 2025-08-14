@@ -18,5 +18,11 @@ jobs:
       - name: Set up Docker Compose
         uses: docker/setup-compose-action@v1
 
-      - name: Run E2E tests
-        run: make e2e-test
+      - name: Start K3S
+        run: make start-k3s
+
+      - name: Run load test
+        run: make test-load
+
+      - name: Run conformance test
+        run: make test-conformance
