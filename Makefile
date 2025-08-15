@@ -24,7 +24,31 @@ start-k3s:
 
 .PHONY: test-conformance
 test-conformance:
-	./tests/conformance/test.sh
+	docker rm -f kubeconformance || true
+	docker run --rm \
+		--name kubeconformance \
+		--network container:"$$(docker ps -q -f name=k3s)" \
+		-e "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" \
+		-e "E2E_FOCUS=sig-api-machinery" \
+		-e E2E_SKIP="StorageVersionAPI|Flaky" \
+		-e E2E_EXTRA_ARGS="--ginkgo.fail-fast" \
+		-v kubeconfig-local:/etc/rancher/k3s:ro \
+		--entrypoint /usr/local/bin/kubeconformance \
+		registry.k8s.io/conformance:v1.29.4
+
+.PHONY: test-conformance
+test-conformance-flaky:
+	docker rm -f kubeconformance || true
+	docker run --rm \
+		--name kubeconformance \
+		--network container:"$$(docker ps -q -f name=k3s)" \
+		-e "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" \
+		-e "E2E_FOCUS=sig-api-machinery" \
+		-e E2E_SKIP="StorageVersionAPI" \
+		-e E2E_EXTRA_ARGS="--ginkgo.fail-fast" \
+		-v kubeconfig-local:/etc/rancher/k3s:ro \
+		--entrypoint /usr/local/bin/kubeconformance \
+		registry.k8s.io/conformance:v1.29.4
 
 .PHONY: test-load
 test-load:
