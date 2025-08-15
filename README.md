@@ -1,7 +1,7 @@
 # Kine FoundationDB backend
 
 This is a Kine fork that uses FoundationDB to mimic ETCD API.
-The implementation currently passes all `sig-api-machinery` tests for `v1.29.4` excluding `StorageVersionAPI|Slow|Flaky`.
+The implementation currently passes all `sig-api-machinery` tests for `v1.29.4` excluding `StorageVersionAPI|Flaky`.
 
 ## Running demo
 0. Install FDB https://apple.github.io/foundationdb/getting-started-mac.html

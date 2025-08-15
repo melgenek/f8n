@@ -41,8 +41,9 @@ def main(rounds, *args, **kwargs):
             raise e
 
     for round in range(rounds):
-        logging.info(f"Running round #{round}")
         i = random.randint(0, 9)
+        if i % 500 == 0:
+            logging.info(f"Running round #{round}")
         if i in [0, 1]:
             create_configmap()
         elif i in [2, 3, 4, 5, 6]:
