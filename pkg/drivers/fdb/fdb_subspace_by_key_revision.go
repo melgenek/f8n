@@ -56,6 +56,10 @@ func (s *ByKeyAndRevisionSubspace) Write(tr *fdb.Transaction, key *KeyAndRevisio
 	}
 }
 
+func (s *ByKeyAndRevisionSubspace) Delete(tr *fdb.Transaction, key *KeyAndRevision) {
+	tr.Clear(s.subspace.Pack(tuple.Tuple{key.Key, key.Rev}))
+}
+
 func (s *ByKeyAndRevisionSubspace) GetFromIterator(it *fdb.RangeIterator) (*ByKeyAndRevisionRecord, error) {
 	kv, err := it.Get()
 	if err != nil {

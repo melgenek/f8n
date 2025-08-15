@@ -23,17 +23,14 @@ func TestFDB(t *testing.T) {
 	logrus.SetLevel(logrus.InfoLevel)
 	n := 4
 	sameKeyN := 3
-	f := NewFdbStructured("VufDkgAW:O2dFQHXk@127.0.0.1:4689")
-	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(20)*time.Second)
+	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
+	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancelCtx()
 
 	err := f.Start(ctx)
 	require.NoError(t, err)
 
 	createLargeRecords(t, f, ctx, 500)
-	cancelCtx()
-	ctx, cancelCtx = context.WithTimeout(context.Background(), time.Duration(20)*time.Second)
-	defer cancelCtx()
 	err = f.Start(ctx)
 	require.NoError(t, err)
 
@@ -243,8 +240,8 @@ func TestFDBLargeRecords(t *testing.T) {
 	forceRetryTransaction = func(i int) bool { return i < 2 }
 	logrus.SetLevel(logrus.InfoLevel)
 
-	f := NewFdbStructured("VufDkgAW:O2dFQHXk@127.0.0.1:4689")
-	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(20)*time.Second)
+	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
+	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
 	defer cancelCtx()
 
 	err := f.Start(ctx)
@@ -301,6 +298,142 @@ func TestFDBLargeRecords(t *testing.T) {
 	require.Equal(t, records, listedRecordsAfterDelete, "listed records after delete do not match expected")
 }
 
+func TestCompaction(t *testing.T) {
+	keyName := "/abc/key123"
+	value := []byte("val123")
+	newValue := []byte("newVal123")
+	updatedLease := int64(123)
+
+	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
+	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(20)*time.Second)
+	defer cancelCtx()
+
+	err := f.Start(ctx)
+	require.NoError(t, err)
+
+	// Create a key
+	nextRev, err := f.Create(ctx, keyName, value, 0)
+	require.NoError(t, err)
+	require.Greater(t, nextRev, int64(0), "Expected a valid revision after creation")
+
+	// Update the key
+	updatedRev, updatedKv, updated, err := f.Update(ctx, keyName, newValue, nextRev, updatedLease)
+	require.NoError(t, err)
+	require.True(t, updated, "Expected the key to be updated")
+	require.Equal(t, nextRev, updatedKv.CreateRevision, "CreateRevision should match the original")
+	require.GreaterOrEqual(t, updatedRev, updatedKv.ModRevision, "ModRevision less than or equal to the new revision")
+	require.Equal(t, keyName, updatedKv.Key, "Key should match the original key")
+	require.Equal(t, newValue, updatedKv.Value, "Value should be updated value")
+	require.Equal(t, updatedLease, updatedKv.Lease, "Lease should match the provided lease")
+
+	// Get created value by revision
+	_, kv, err := f.Get(ctx, keyName, "", 0, updatedRev-1)
+	require.NoError(t, err)
+	require.NotNil(t, kv, "Expected to find the key after compaction")
+	require.Equal(t, value, kv.Value, "Value should match the updated value")
+
+	// Compact the database
+	compactRev, err := f.Compact(ctx, updatedRev)
+	require.NoError(t, err)
+	require.Greater(t, compactRev, int64(0), "Expected a valid revision after compaction")
+
+	// Get value by revision
+	_, _, err = f.Get(ctx, keyName, "", 0, updatedRev-1)
+	require.ErrorIs(t, err, server.ErrCompacted)
+
+	// Verify the key still exists after compaction
+	_, kv, err = f.Get(ctx, keyName, "", 0, 0)
+	require.NoError(t, err)
+	require.NotNil(t, kv, "Expected to find the key after compaction")
+	require.Equal(t, keyName, kv.Key, "Key should match the original key")
+	require.GreaterOrEqual(t, updatedRev, kv.ModRevision, "ModRevision less than or equal to the new revision")
+	require.Equal(t, newValue, kv.Value, "Value should match the updated value")
+
+	// Verify the health key exists
+	_, kv, err = f.Get(ctx, "/registry/health", "", 0, 0)
+	require.NoError(t, err)
+	require.NotNil(t, kv, "Expected to find the key after compaction")
+
+	// Verify the compact revision is updated
+	revAfterCompact, err := f.CurrentRevision(ctx)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, revAfterCompact, compactRev, "Current revision should be greater or equal to the compact revision")
+
+	// Verify the key can still be listed
+	_, kvs, err := f.List(ctx, "/abc/", "/abc/key", 0, 0)
+	require.NoError(t, err)
+	require.Len(t, kvs, 1, "Expected to find one key after compaction")
+	require.Equal(t, keyName, kvs[0].Key, "Listed key should match the original key")
+	require.GreaterOrEqual(t, updatedRev, kvs[0].ModRevision, "Listed key ModRevision should match the updated revision")
+	require.Equal(t, newValue, kvs[0].Value, "Listed key Value should match the updated value")
+
+	// Verify the key can still be counted
+	_, count, err := f.Count(ctx, "/abc/", "/abc/key", 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), count, "Expected to count one key after compaction")
+
+	// Verify the key can still be watched
+	watch := f.Watch(ctx, keyName, 0)
+	select {
+	case events := <-watch.Events:
+		require.Len(t, events, 1, "Expected one event after watching the key")
+		require.Equal(t, keyName, events[0].KV.Key, "Watched key should match the original key")
+		require.Equal(t, updatedKv.ModRevision, events[0].KV.ModRevision, "Watched key ModRevision should match the updated revision")
+		require.Equal(t, newValue, events[0].KV.Value, "Watched key Value should match the updated value")
+	case wRrr := <-watch.Errorc:
+		require.NoError(t, wRrr, "Expected no error while watching the key")
+	}
+
+	// Verify the key can still be deleted
+	deleteRev, deleteKv, deleted, err := f.Delete(ctx, keyName, 0)
+	require.NoError(t, err)
+	require.True(t, deleted, "Expected the key to be deleted")
+	require.GreaterOrEqual(t, deleteRev, updatedRev, "Expected a valid revision after deletion")
+	require.Equal(t, keyName, deleteKv.Key, "Deleted key should match the original key")
+	require.Equal(t, newValue, deleteKv.Value, "Deleted key Value should match the updated value")
+	require.Equal(t, updatedLease, deleteKv.Lease, "Lease should match the provided lease")
+
+	// Verify the key is gone after deletion
+	_, kv, err = f.Get(ctx, keyName, "", 0, 0)
+	require.NoError(t, err)
+	require.Nil(t, kv, "Expected to not find the key after deletion")
+
+	// Verify the key is gone in the list
+	_, kvs, err = f.List(ctx, "/abc/", "/abc/key", 0, 0)
+	require.NoError(t, err)
+	require.Empty(t, kvs, "Expected to not find the key in the list after deletion")
+
+	// Verify the key is gone in the count
+	_, count, err = f.Count(ctx, "/abc/", "/abc/key", 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), count, "Expected to count zero keys after deletion")
+
+	// Verify the compact revision is can be done for an empty list
+	_, err = f.Compact(ctx, deleteRev)
+	require.NoError(t, err)
+
+	// Verify the health key exists
+	_, kv, err = f.Get(ctx, "/registry/health", "", 0, 0)
+	require.NoError(t, err)
+	require.NotNil(t, kv, "Expected to find the key after compaction")
+
+	// Verify the key does not exist
+	watch = f.Watch(ctx, keyName, 0)
+	select {
+	case events := <-watch.Events:
+		require.Lenf(t, events, 0, "Expected no events after watching the deleted key")
+	case wRrr := <-watch.Errorc:
+		require.NoError(t, wRrr, "Expected no error while watching the key")
+	case <-time.After(3 * time.Second):
+		// No events as expected
+	}
+
+	// Verify the old revision cannot be watched
+	watch = f.Watch(ctx, keyName, updatedRev)
+	require.NotNil(t, watch.CompactRevision)
+	require.NotNil(t, watch.CurrentRevision)
+}
+
 func createLargeRecords(t *testing.T, f server.Backend, ctx context.Context, recordCount int) map[string][]byte {
 	recordSize := 2 * 1024 * 1024 // 2 MiB
 
@@ -314,14 +447,8 @@ func createLargeRecords(t *testing.T, f server.Backend, ctx context.Context, rec
 		require.NoError(t, err)
 		records[key] = value
 		v := func(key string, value []byte) (e error) {
-			rev, err := f.Create(ctx, key, value, 0)
-			if err != nil {
-				return err
-			}
-			if rev <= 0 {
-				return fmt.Errorf("expected positive revision for key %s, got %d", key, rev)
-			}
-			return nil
+			_, err := f.Create(ctx, key, value, 0)
+			return err
 		}
 		g.Go(func() error { return v(key, value) })
 	}

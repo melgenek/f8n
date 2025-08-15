@@ -184,20 +184,21 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 			}
 		}
 
+		record, err := f.byRevision.Get(&tr, lastRecord.Key.Rev)
+		if err != nil {
+			return newModificationResultRev(zeroFuture, nil, false), err
+		}
+
 		if revision != 0 && versionstampToInt64(lastRecord.Key.Rev) != revision {
-			if record, err := f.byRevision.Get(&tr, lastRecord.Key.Rev); err != nil {
-				return newModificationResultRev(zeroFuture, nil, false), err
-			} else {
-				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), nil
-			}
+			return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), nil
 		}
 
 		deleteRecord := &Record{
 			Key:            key,
 			IsCreate:       false,
 			IsDelete:       true,
-			Lease:          0,
-			Value:          nil,
+			Lease:          record.Lease,
+			Value:          record.Value,
 			CreateRevision: lastRecord.GetCreateRevision(),
 			PrevRevision:   lastRecord.Key.Rev,
 		}

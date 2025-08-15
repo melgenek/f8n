@@ -2,6 +2,7 @@ package fdb
 
 import (
 	"context"
+	"fmt"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
 	"k8s.io/client-go/util/workqueue"
@@ -22,6 +23,8 @@ type ttlEventKV struct {
 }
 
 func (f *FDB) ttl(ctx context.Context) {
+	logrus.Info("Starting TTL")
+
 	queue := workqueue.NewDelayingQueue()
 	rwMutex := &sync.RWMutex{}
 	ttlEventKVMap := make(map[string]*ttlEventKV)
@@ -130,13 +133,13 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 			}
 
 			collector = newListCollector(f, 1000)
-			rev, err = f.listWithCollector("ttl2", "/", revRecords[len(revRecords)-1].Record.Key, 0, collector)
+			_, err = f.listWithCollector("ttl2", "/", revRecords[len(revRecords)-1].Record.Key, rev, collector)
+			revRecords = collector.records
 		}
 
 		wr := f.Watch(ctx, "/", rev)
 		if wr.CompactRevision != 0 {
-			logrus.Errorf("TTL event watch failed: %v", server.ErrCompacted)
-			return
+			panic(fmt.Errorf("TTL event watch failed: %v", server.ErrCompacted))
 		}
 		for events := range wr.Events {
 			for _, event := range events {

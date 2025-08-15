@@ -2,6 +2,7 @@ package fdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
@@ -15,6 +16,7 @@ const maxBatchSize = 1000
 
 type AfterResult struct {
 	currentRevision int64
+	compactRevision int64
 	events          []*server.Event
 }
 
@@ -23,8 +25,6 @@ func (a *AfterResult) String() string {
 }
 
 func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.WatchResult {
-	logrus.Tracef("WATCH %s, revision=%d", prefix, revision)
-
 	// starting watching right away so we don't miss anything
 	ctx, cancel := context.WithCancel(ctx)
 	readChan := f.innerWatch(ctx, prefix)
@@ -34,16 +34,23 @@ func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.W
 		revision--
 	}
 
-	result := make(chan []*server.Event, 100)
-	wr := server.WatchResult{Events: result}
+	result := make(chan []*server.Event, 10)
+	errc := make(chan error, 1)
+	wr := server.WatchResult{Events: result, Errorc: errc}
 
 	// initial read
 	afterResult, err := f.after(prefix, revision, 0)
 	if err != nil {
+		logrus.Errorf("Failed to 'after' %s for revision %d: %v", prefix, revision, err)
+		if errors.Is(err, server.ErrCompacted) {
+			wr.CompactRevision = afterResult.compactRevision
+			wr.CurrentRevision = afterResult.currentRevision
+		} else {
+			errc <- server.ErrGRPCUnhealthy
+		}
 		cancel()
+		return wr
 	}
-
-	logrus.Tracef("WATCH LIST key=%s rev=%d => %v", prefix, revision, afterResult)
 
 	go func() {
 		lastRevision := revision
@@ -146,14 +153,14 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 
 func (f *FDB) after(prefix string, minRevision, limit int64) (*AfterResult, error) {
 	begin := f.byRevision.GetSubspace().Pack(tuple.Tuple{int64ToVersionstamp(minRevision)})
-	_, end := f.byRevision.GetSubspace().FDBRangeKeys()
+	_, end := f.byRevision.GetSubspace().FDBRangeKeySelectors()
 
 	// https://forums.foundationdb.org/t/ranges-without-explicit-end-go/773/11
 	// https://forums.foundationdb.org/t/foundation-db-go-lang-pagination/1305/17
 	// https://forums.foundationdb.org/t/cant-get-last-pair-in-fdbkeyvalue-array/1252/2
 	selector := fdb.SelectorRange{
 		Begin: fdb.FirstGreaterThan(begin),
-		End:   fdb.FirstGreaterOrEqual(end),
+		End:   end,
 	}
 
 	result, err := transact(f.db, nil, func(tr fdb.Transaction) (*AfterResult, error) {
@@ -174,7 +181,12 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (*AfterResult, erro
 					if err != nil {
 						return nil, err
 					}
-					event.PrevKV = revRecordToEvent(&RevRecord{Rev: record.PrevRevision, Record: prevRecord}).KV
+					if prevRecord != nil {
+						event.PrevKV = revRecordToEvent(&RevRecord{Rev: record.PrevRevision, Record: prevRecord}).KV
+					} else {
+						// Previous record has been compacted
+						event.PrevKV = nil
+					}
 				}
 
 				result = append(result, event)
@@ -186,11 +198,20 @@ func (f *FDB) after(prefix string, minRevision, limit int64) (*AfterResult, erro
 			return nil, err
 		}
 
+		compactRev, err := f.compactRev.Get(&tr)
+		if err != nil {
+			return nil, err
+		}
+		if minRevision > 0 && minRevision < versionstampToInt64(compactRev) {
+			return &AfterResult{
+					currentRevision: rev,
+					compactRevision: versionstampToInt64(compactRev),
+					events:          result,
+				},
+				server.ErrCompacted
+		}
 		return &AfterResult{currentRevision: rev, events: result}, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	logrus.Tracef("AFTER key=%s rev=%d => res=%v err=%v", prefix, minRevision, result, err)
+	return result, err
 }

@@ -45,7 +45,6 @@ The implementation is in the `pkg/drivers/fdb` directory.
 
 Here is a list of implementation details that need to be completed before starting scale testing of this implementation.
 - [ ] Watch operation has to account for long-running or large transactions. Make sure that in such case there are multiple consecutive FDB transactions. 
-- [ ] Implement compaction
 - [ ] put ttl events into a separate slice
 - [ ] limit records to 2MiB
 

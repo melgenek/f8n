@@ -1,7 +1,6 @@
 package fdb
 
 import (
-	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
@@ -91,11 +90,16 @@ func (s *ByRevisionSubspace) Get(tr *fdb.Transaction, rev tuple.Versionstamp) (*
 	if err != nil {
 		return nil, err
 	}
-	if record == nil {
-		return nil, fmt.Errorf("record not found for revision '%s'", rev)
-	}
-
 	return record, nil
+}
+
+func (s *ByRevisionSubspace) Delete(tr *fdb.Transaction, rev tuple.Versionstamp) error {
+	selector, err := fdb.PrefixRange(s.subspace.Pack(tuple.Tuple{rev}))
+	if err != nil {
+		return err
+	}
+	tr.ClearRange(selector)
+	return nil
 }
 
 func (s *ByRevisionSubspace) GetIterator(tr *fdb.Transaction, rev tuple.Versionstamp) (*fdb.RangeIterator, error) {

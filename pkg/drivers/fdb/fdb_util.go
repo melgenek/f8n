@@ -4,16 +4,24 @@ import (
 	"errors"
 	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/sirupsen/logrus"
 	"time"
+)
+
+const (
+	// https://apple.github.io/foundationdb/api-error-codes.html
+	notCommittedErrorCode = 1020 // Transaction not committed due to conflict with another transaction
+
+	logConflictingKeys = false
 )
 
 var forceRetryTransaction = func(i int) bool { return false }
 
-type Collector[T any] interface {
+type Processor[T any] interface {
 	startBatch()
 	next(tr *fdb.Transaction, record T) (fdb.KeyConvertible, bool, error)
 	endBatch(tr *fdb.Transaction, isLast bool) error
-	appendBatchToResult()
+	postBatch()
 }
 
 type batchResult struct {
@@ -22,7 +30,7 @@ type batchResult struct {
 	iteratorHasMore    bool
 }
 
-func collectRange(db fdb.Database, selector fdb.SelectorRange, collector Collector[*fdb.RangeIterator]) error {
+func processRange(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) error {
 	beginSelector := selector.Begin
 
 	for i := 0; ; i++ {
@@ -42,7 +50,7 @@ func collectRange(db fdb.Database, selector fdb.SelectorRange, collector Collect
 	return nil
 }
 
-func collectBatch(db fdb.Database, selector fdb.SelectorRange, collector Collector[*fdb.RangeIterator]) (batchResult, error) {
+func collectBatch(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) (batchResult, error) {
 	res, err := transact(db, batchResult{}, func(tr fdb.Transaction) (batchResult, error) {
 		start := time.Now()
 		it := tr.GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
@@ -71,7 +79,7 @@ func collectBatch(db fdb.Database, selector fdb.SelectorRange, collector Collect
 
 		return res, nil
 	})
-	collector.appendBatchToResult()
+	collector.postBatch()
 	return res, err
 }
 
@@ -82,21 +90,46 @@ func transact[T any](d fdb.Database, defaultValue T, f func(fdb.Transaction) (T,
 		return defaultValue, fmt.Errorf("failed to create a transaction: %w", e)
 	}
 
-	wrapped := func() (ret T, e error) {
+	wrapped := func() (T, error) {
 		defer panicToError(&e)
 
-		e = tr.Options().SetRetryLimit(3)
+		// https://forums.foundationdb.org/t/defaults-for-transaction-timeouts-and-retries/315/2
+		e = tr.Options().SetTimeout(20000) // 30 seconds
 		if e != nil {
-			return defaultValue, fmt.Errorf("failed to set retry limit: %w", e)
+			return defaultValue, fmt.Errorf("failed to set timeout limit: %w", e)
 		}
 
-		ret, e = f(tr)
+		if logConflictingKeys {
+			e = tr.Options().SetReportConflictingKeys()
+			if e != nil {
+				return defaultValue, fmt.Errorf("failed to set conflicint keys option: %w", e)
+			}
+		}
+
+		ret, e := f(tr)
 
 		if e == nil {
 			e = tr.Commit().Get()
 		}
 
-		return
+		if logConflictingKeys {
+			var fe fdb.Error
+			if errors.As(e, &fe) && fe.Code == notCommittedErrorCode {
+				//https://forums.foundationdb.org/t/unable-to-use-conflicting-keys-special-keyspace-with-go-bindings/3097/3
+				rng := fdb.KeyRange{
+					Begin: fdb.Key("\xff\xff/transaction/conflicting_keys/"),
+					End:   fdb.Key("\xff\xff/transaction/conflicting_keys/\xff"),
+				}
+				if kvs, err := tr.GetRange(rng, fdb.RangeOptions{}).GetSliceWithError(); err != nil {
+					logrus.Errorf("Unable to read conflicting keys range: %v\n", e)
+					e = err
+				} else {
+					logrus.Warnf("Conflicting keys: '%+v'", kvs)
+				}
+			}
+		}
+
+		return ret, e
 	}
 
 	return retryable(wrapped, tr.OnError)
@@ -106,14 +139,14 @@ func retryable[T any](wrapped func() (T, error), onError func(fdb.Error) fdb.Fut
 	for i := 0; ; i++ {
 		ret, e = wrapped()
 
+		if forceRetryTransaction(i) {
+			// commit_unknown_result
+			e = fdb.Error{1021}
+		}
+
 		// No error means success!
 		if e == nil {
-			if forceRetryTransaction(i) {
-				// commit_unknown_result
-				onError(fdb.Error{1021}).MustGet()
-			} else {
-				return
-			}
+			return
 		}
 
 		// Check if the error chain contains an fdb.Error

@@ -1,5 +1,3 @@
-.DEFAULT_GOAL := build
-
 .PHONY: build
 PLATFORMS = linux/arm64
 build:

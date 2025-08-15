@@ -46,9 +46,10 @@ func int64ToVersionstamp(minRevision int64) tuple.Versionstamp {
 var dummyVersionstamp = createDummyVersionstamp()
 
 func createDummyVersionstamp() tuple.Versionstamp {
-	versionstamp := tuple.IncompleteVersionstamp(10)
-	for i := 0; i < 10; i++ {
-		versionstamp.TransactionVersion[i] = byte(i)
+	versionstamp := tuple.IncompleteVersionstamp(123)
+	// versionstampToInt64 should return 0 for dummy versionstamp
+	for i := 0; i < 8; i++ {
+		versionstamp.TransactionVersion[i] = 0
 	}
 	return versionstamp
 }

@@ -102,7 +102,13 @@ func (b *FdbLogger) Count(ctx context.Context, prefix, startKey string, revision
 	return b.backend.Count(ctx, prefix, startKey, revision)
 }
 
-func (b *FdbLogger) Watch(ctx context.Context, prefix string, revision int64) server.WatchResult {
+func (b *FdbLogger) Watch(ctx context.Context, prefix string, revision int64) (res server.WatchResult) {
+	start := time.Now()
+	defer func() {
+		dur := time.Since(start)
+		fStr := "WATCH prefix=%s rev=%s => rev=%d, compactRev=%v, duration=%s"
+		b.logMethod(dur, fStr, prefix, revision, res.CurrentRevision, res.CompactRevision, dur)
+	}()
 	return b.backend.Watch(ctx, prefix, revision)
 }
 
@@ -120,6 +126,12 @@ func (b *FdbLogger) CurrentRevision(ctx context.Context) (revRet int64, errRet e
 	return b.backend.CurrentRevision(ctx)
 }
 
-func (b *FdbLogger) Compact(_ context.Context, revision int64) (int64, error) {
-	return revision, nil
+func (b *FdbLogger) Compact(ctx context.Context, revision int64) (revRet int64, errRet error) {
+	start := time.Now()
+	defer func() {
+		dur := time.Since(start)
+		fStr := "COMPACT rev=%d => rev=%d, err=%v, duration=%s"
+		b.logMethod(dur, fStr, revision, revRet, errRet, dur)
+	}()
+	return b.backend.Compact(ctx, revision)
 }

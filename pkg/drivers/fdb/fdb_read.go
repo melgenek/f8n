@@ -33,12 +33,9 @@ func (f *FDB) List(_ context.Context, prefix, startKey string, limit, revision i
 	return rev, kvs, nil
 }
 
-func (f *FDB) Get(_ context.Context, key, rangeEnd string, limit, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
+func (f *FDB) Get(_ context.Context, key, rangeEnd string, _, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
 	if rangeEnd != "" {
 		return 0, nil, fmt.Errorf("invalid 'rangeEnd' for Get. Expected: '', got %s", rangeEnd)
-	}
-	if limit != 1 {
-		logrus.Tracef("Get request got `limit != 1`. Key: %s, rangeEnd=%s, limit=%d, rev=%d", key, rangeEnd, limit, revision)
 	}
 	rev, kvs, err := f.listKeyValue("Get", key, key, 1, revision)
 	if err != nil {
@@ -92,7 +89,7 @@ func (c *countCollector) endBatch(*fdb.Transaction, bool) error {
 	return nil
 }
 
-func (c *countCollector) appendBatchToResult() {
+func (c *countCollector) postBatch() {
 	c.totalCount += c.batchCount
 }
 
@@ -198,7 +195,7 @@ func (c *listCollector) endBatch(*fdb.Transaction, bool) error {
 	return nil
 }
 
-func (c *listCollector) appendBatchToResult() {
+func (c *listCollector) postBatch() {
 	for _, record := range c.batchRecords {
 		c.records = append(c.records, record)
 	}
@@ -211,14 +208,14 @@ func (c *listCollector) String() string {
 type recordCollector struct {
 	f                  *FDB
 	maxRevision        int64
-	inner              Collector[*ByKeyAndRevisionRecord]
+	inner              Processor[*ByKeyAndRevisionRecord]
 	currentRecord      *ByKeyAndRevisionRecord
-	rev                int64
 	batchCurrentRecord *ByKeyAndRevisionRecord
+	rev                int64
 	batchRev           int64
 }
 
-func newRecordCollector(f *FDB, maxRevision int64, inner Collector[*ByKeyAndRevisionRecord]) *recordCollector {
+func newRecordCollector(f *FDB, maxRevision int64, inner Processor[*ByKeyAndRevisionRecord]) *recordCollector {
 	return &recordCollector{
 		f:           f,
 		maxRevision: maxRevision,
@@ -270,11 +267,19 @@ func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
 		c.batchRev = rev
 	}
 
+	if isLast && c.maxRevision > 0 {
+		if compactRev, err := c.f.compactRev.Get(tr); err != nil {
+			return err
+		} else if c.maxRevision < versionstampToInt64(compactRev) {
+			return server.ErrCompacted
+		}
+	}
+
 	return nil
 }
 
-func (c *recordCollector) appendBatchToResult() {
-	c.inner.appendBatchToResult()
+func (c *recordCollector) postBatch() {
+	c.inner.postBatch()
 	c.rev = c.batchRev
 	c.currentRecord = c.batchCurrentRecord
 }
@@ -283,7 +288,7 @@ func (c *recordCollector) String() string {
 	return fmt.Sprintf("{rev=%d, currentRecord=%v, inner=%v}", c.rev, c.currentRecord, c.inner)
 }
 
-func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int64, collector Collector[*ByKeyAndRevisionRecord]) (resRev int64, resErr error) {
+func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int64, collector Processor[*ByKeyAndRevisionRecord]) (resRev int64, resErr error) {
 	// Examples:
 	// prefix=/bootstrap/, startKey=/bootstrap
 	// prefix=/registry/secrets/, startKey=/registry/secrets/
@@ -333,7 +338,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 	}
 
 	rc := newRecordCollector(f, maxRevision, collector)
-	err := collectRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, rc)
+	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, rc)
 	if err != nil {
 		return 0, err
 	}

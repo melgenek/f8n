@@ -2,6 +2,7 @@ package fdb
 
 import (
 	"context"
+	"errors"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"github.com/k3s-io/kine/pkg/broadcaster"
@@ -16,18 +17,19 @@ var (
 )
 
 func New(_ context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
-	logrus.Infof("Net FDB backend. Config: %+v", cfg)
+	logrus.Info("New FDB backend")
 	return false, NewFdbStructured(cfg.DataSourceName), nil
 }
 
 type FDB struct {
 	connectionString string
 	db               fdb.Database
-	kine             directory.DirectorySubspace
+	etcd             directory.DirectorySubspace
 
 	byRevision       *ByRevisionSubspace
 	byKeyAndRevision *ByKeyAndRevisionSubspace
 	watch            *WatchSubspace
+	compactRev       *CompactRevisionSubspace
 
 	broadcaster broadcaster.Broadcaster
 	ctx         context.Context
@@ -47,21 +49,20 @@ func (f *FDB) Start(ctx context.Context) error {
 	fdb.MustAPIVersion(730)
 
 	db, err := fdb.OpenWithConnectionString(f.connectionString)
-
 	if err != nil {
 		return err
 	}
 	f.db = db
 
-	kine, err := directory.CreateOrOpen(db, []string{"kine"}, nil)
+	etcd, err := directory.CreateOrOpen(db, []string{"etcd"}, nil)
 	if err != nil {
 		return err
 	}
-	f.kine = kine
+	f.etcd = etcd
 
 	// todo don't clear on startup
 	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-		tr.ClearRange(kine)
+		tr.ClearRange(etcd)
 		return
 	})
 
@@ -69,17 +70,25 @@ func (f *FDB) Start(ctx context.Context) error {
 		return err
 	}
 
-	f.byRevision = CreateByRevisionSubspace(kine)
-	f.byKeyAndRevision = CreateByKeyRevisionSubspace(kine)
-	f.watch = CreateWatchSubspace(kine)
+	f.byRevision = CreateByRevisionSubspace(etcd)
+	f.byKeyAndRevision = CreateByKeyRevisionSubspace(etcd)
+	f.watch = CreateWatchSubspace(etcd)
+	f.compactRev = CreateCompactRevisionSubspace(etcd)
 
 	// https://github.com/kubernetes/kubernetes/blob/442a69c3bdf6fe8e525b05887e57d89db1e2f3a5/staging/src/k8s.io/apiserver/pkg/storage/storagebackend/factory/etcd3.go#L97
 	if _, err := f.Create(ctx, "/registry/health", []byte(`{"health":"true"}`), 0); err != nil {
-		if err != server.ErrKeyExists {
+		if !errors.Is(err, server.ErrKeyExists) {
 			logrus.Errorf("Failed to create health check key: %v", err)
 		}
 	}
 	go f.ttl(ctx)
 
 	return nil
+}
+
+func (f *FDB) DbSize(_ context.Context) (int64, error) {
+	result, err := transact(f.db, 0, func(tr fdb.Transaction) (int64, error) {
+		return tr.GetEstimatedRangeSizeBytes(f.etcd).Get()
+	})
+	return result, err
 }

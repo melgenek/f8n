@@ -1,2 +1,0 @@
-Starting FDB server on 127.0.0.1:4550
-FDBD joined cluster.
