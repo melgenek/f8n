@@ -44,7 +44,7 @@ test-conformance-flaky:
 		--network container:"$$(docker ps -q -f name=k3s)" \
 		-e "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" \
 		-e "E2E_FOCUS=sig-api-machinery" \
-		-e E2E_SKIP="FeatureGate" \
+		-e E2E_SKIP="StorageVersionAPI" \
 		-e E2E_EXTRA_ARGS="--ginkgo.fail-fast" \
 		-v kubeconfig:/etc/rancher/k3s:ro \
 		--entrypoint /usr/local/bin/kubeconformance \

@@ -1,12 +1,13 @@
 services:
   k3s:
     container_name: k3s-local
-    image: docker.io/rancher/k3s:v1.29.4-k3s1
+    image: docker.io/rancher/k3s:v1.33.3-k3s1
     privileged: true
     command:
       - server
       - --disable=servicelb,traefik,local-storage,metrics-server
       - --kube-apiserver-arg=etcd-compaction-interval=10s
+      - --kube-apiserver-arg=feature-gates=WatchList=true,VolumeAttributesClass=true
       - --disable-network-policy
       - --flannel-iface=eth0
     environment:

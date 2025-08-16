@@ -34,7 +34,7 @@ func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.W
 		revision--
 	}
 
-	result := make(chan []*server.Event, 10)
+	result := make(chan []*server.Event, 100)
 	errc := make(chan error, 1)
 	wr := server.WatchResult{Events: result, Errorc: errc}
 
