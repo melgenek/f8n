@@ -5,7 +5,7 @@ start-fdb:
 
 .PHONY: start-k3s
 start-k3s:
-	docker compose -f docker-compose-k3s.yaml up --force-recreate -d
+	docker compose -f docker-compose-k3s.yaml up --force-recreate
 	docker exec -ti k3s-local sh
 
 .PHONY: test-conformance
@@ -14,7 +14,7 @@ test-conformance:
         --name kubeconformance \
         --network container:"$$(docker ps -q -f name=k3s-local)" \
         -e "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" \
-        -e "E2E_FOCUS=listing\svalidating\swebhooks\sshould\swork" \
+        -e "E2E_FOCUS=CLE\sPreemption" \
         -e E2E_SKIP="StorageVersionAPI" \
         -e E2E_EXTRA_ARGS="--ginkgo.fail-fast" \
         -v kubeconfig-local:/etc/rancher/k3s:ro \
