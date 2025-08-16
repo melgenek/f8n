@@ -41,8 +41,8 @@ services:
       - server
       - --disable=servicelb,traefik,local-storage,metrics-server
       - --kube-apiserver-arg=etcd-compaction-interval=10s
-      - --kube-apiserver-arg=feature-gates=WatchList=true,VolumeAttributesClass=true,CoordinatedLeaderElection=true
-      - --kube-apiserver-arg=runtime-config=coordination.k8s.io/v1beta1=true
+      - --kube-apiserver-arg=feature-gates=WatchList=true,VolumeAttributesClass=true,CoordinatedLeaderElection=true,DynamicResourceAllocation=true
+      - --kube-apiserver-arg=runtime-config=coordination.k8s.io/v1beta1=true,resource.k8s.io/v1beta1=true
       - --disable-network-policy
       - --flannel-iface=eth0
     environment:

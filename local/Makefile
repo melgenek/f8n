@@ -10,11 +10,12 @@ start-k3s:
 
 .PHONY: test-conformance
 test-conformance:
+	docker rm -f kubeconformance || true
 	docker run --rm \
         --name kubeconformance \
         --network container:"$$(docker ps -q -f name=k3s-local)" \
         -e "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" \
-        -e "E2E_FOCUS=CLE\sPreemption" \
+        -e "E2E_FOCUS=should\screate\sa\sResourceQuota\sand\scapture\sthe\slife\sof\sa\sResourceClaim" \
         -e E2E_SKIP="StorageVersionAPI" \
         -e E2E_EXTRA_ARGS="--ginkgo.fail-fast" \
         -v kubeconfig-local:/etc/rancher/k3s:ro \
