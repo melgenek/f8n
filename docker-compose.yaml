@@ -41,7 +41,6 @@ services:
       - server
       - --disable=servicelb,traefik,local-storage,metrics-server
       - --kube-apiserver-arg=etcd-compaction-interval=10s
-      - --kube-apiserver-arg=feature-gates=WatchList=true
       - --disable-network-policy
       - --flannel-iface=eth0
     environment:

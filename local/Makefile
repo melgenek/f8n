@@ -14,8 +14,8 @@ test-conformance:
         --name kubeconformance \
         --network container:"$$(docker ps -q -f name=k3s-local)" \
         -e "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" \
-        -e "E2E_FOCUS=should\ssupport\scontinue\slisting\sfrom\sthe\slast\skey" \
-        -e E2E_SKIP="StorageVersionAPI|Flaky" \
+        -e "E2E_FOCUS=against\s2\spvcs\swith\ssame\svolume\sattributes\sclass" \
+        -e E2E_SKIP="FeatureGate" \
         -e E2E_EXTRA_ARGS="--ginkgo.fail-fast" \
         -v kubeconfig-local:/etc/rancher/k3s:ro \
         --entrypoint /usr/local/bin/kubeconformance \
