@@ -94,7 +94,7 @@ func transact[T any](d fdb.Database, defaultValue T, f func(fdb.Transaction) (T,
 		defer panicToError(&e)
 
 		// https://forums.foundationdb.org/t/defaults-for-transaction-timeouts-and-retries/315/2
-		e = tr.Options().SetTimeout(20000) // 30 seconds
+		e = tr.Options().SetTimeout(30000) // 30 seconds
 		if e != nil {
 			return defaultValue, fmt.Errorf("failed to set timeout limit: %w", e)
 		}
