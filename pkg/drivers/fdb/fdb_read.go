@@ -112,18 +112,11 @@ func (f *FDB) listKeyValue(caller, prefix, startKey string, limit, maxRevision i
 }
 
 type listCollector struct {
-	f                *FDB
-	limit            int64
-	capacity         int64
-	records          []*RevRecord
-	batchQueue       chan *fdb.RangeIterator
-	batchResultQueue chan *RevRecordResult
-	batchRecords     []*RevRecord
-}
-
-type RevRecordResult struct {
-	revRecord RevRecord
-	err       error
+	f              *FDB
+	limit          int64
+	records        []*RevRecord
+	batchIterators []*fdb.RangeIterator
+	batchRecords   []*RevRecord
 }
 
 func newListCollector(f *FDB, limit int64) *listCollector {
@@ -132,34 +125,17 @@ func newListCollector(f *FDB, limit int64) *listCollector {
 		capacity = 100
 	}
 	return &listCollector{
-		f:            f,
-		limit:        limit,
-		capacity:     capacity,
-		records:      make([]*RevRecord, 0, capacity),
-		batchRecords: make([]*RevRecord, 0, capacity),
+		f:              f,
+		limit:          limit,
+		records:        make([]*RevRecord, 0, capacity),
+		batchIterators: make([]*fdb.RangeIterator, 0, capacity),
+		batchRecords:   make([]*RevRecord, 0, capacity),
 	}
 }
 
 func (c *listCollector) startBatch() {
+	c.batchIterators = c.batchIterators[len(c.batchIterators):]
 	c.batchRecords = c.batchRecords[len(c.batchRecords):]
-	queueCapacity := int64(0.1 * float64(c.capacity))
-	c.batchQueue = make(chan *fdb.RangeIterator, queueCapacity)
-	c.batchResultQueue = make(chan *RevRecordResult, queueCapacity)
-	go func(iterators <-chan *fdb.RangeIterator, results chan<- *RevRecordResult) {
-		for it := range iterators {
-			rev, record, err := c.f.byRevision.GetFromIterator(it)
-			if err != nil {
-				results <- &RevRecordResult{err: err}
-				break
-			}
-			if record == nil {
-				results <- &RevRecordResult{err: fmt.Errorf("record is nil for revision %d", rev)}
-				break
-			}
-			results <- &RevRecordResult{revRecord: RevRecord{Rev: rev, Record: record}}
-		}
-		close(results)
-	}(c.batchQueue, c.batchResultQueue)
 }
 
 func (c *listCollector) next(tr *fdb.Transaction, record *ByKeyAndRevisionRecord) (fdb.KeyConvertible, bool, error) {
@@ -167,31 +143,34 @@ func (c *listCollector) next(tr *fdb.Transaction, record *ByKeyAndRevisionRecord
 	if err != nil {
 		return nil, false, err
 	}
-	c.batchQueue <- recordIt
+	c.batchIterators = append(c.batchIterators, recordIt)
 
-	if len(c.batchResultQueue) == cap(c.batchResultQueue) {
-		if fetchedRecord := <-c.batchResultQueue; fetchedRecord.err != nil {
-			return nil, false, fetchedRecord.err
-		} else {
-			c.batchRecords = append(c.batchRecords, &fetchedRecord.revRecord)
+	if len(c.batchIterators) > 2 {
+		if err := c.fetchIterators(); err != nil {
+			return nil, false, err
 		}
 	}
 	return nil, c.needMore(), nil
 }
 
 func (c *listCollector) needMore() bool {
-	return c.limit == 0 || int64(len(c.batchQueue)+len(c.batchResultQueue)+len(c.batchRecords)+len(c.records)) < c.limit
+	return c.limit == 0 || int64(len(c.batchIterators)+len(c.records)) < c.limit
 }
 
 func (c *listCollector) endBatch(*fdb.Transaction, bool) error {
-	close(c.batchQueue)
-	for fetchedRecord := range c.batchResultQueue {
-		if fetchedRecord.err != nil {
-			return fetchedRecord.err
+	return c.fetchIterators()
+}
+
+func (c *listCollector) fetchIterators() error {
+	for _, it := range c.batchIterators {
+		rev, record, err := c.f.byRevision.GetFromIterator(it)
+		if err != nil {
+			return err
 		} else {
-			c.batchRecords = append(c.batchRecords, &fetchedRecord.revRecord)
+			c.batchRecords = append(c.batchRecords, &RevRecord{Rev: rev, Record: record})
 		}
 	}
+	c.batchIterators = c.batchIterators[len(c.batchIterators):]
 	return nil
 }
 
