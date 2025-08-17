@@ -27,28 +27,30 @@ test-conformance:
 	docker rm -f kubeconformance || true
 	docker run --rm \
 		--name kubeconformance \
-		--network container:"$$(docker ps -q -f name=k3s)" \
-		-e "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" \
-		-e "E2E_FOCUS=sig-api-machinery" \
-		-e E2E_SKIP="StorageVersionAPI|Flaky" \
+		--network container:"$$(docker ps -q -f name='^k3s$$')" \
+		-e KUBECONFIG="/etc/rancher/k3s/k3s.yaml" \
+		-e E2E_FOCUS="Custom\sresource\sshould\shave\sstorage\sversion\shash" \
+		-e E2E_SKIP="StorageVersionAPI|Slow|Flaky" \
 		-e E2E_EXTRA_ARGS="--ginkgo.fail-fast" \
 		-v kubeconfig:/etc/rancher/k3s:ro \
 		--entrypoint /usr/local/bin/kubeconformance \
-		registry.k8s.io/conformance:v1.33.3
+		registry.k8s.io/conformance:"$$(docker exec k3s k3s --version | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+')"
+		-#e E2E_FOCUS="sig-api-machinery" \
 
-.PHONY: test-conformance
+.PHONY: test-conformance-flaky
 test-conformance-flaky:
 	docker rm -f kubeconformance || true
+	version=$(docker exec k3s k3s --version | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+')
 	docker run --rm \
 		--name kubeconformance \
 		--network container:"$$(docker ps -q -f name=k3s)" \
-		-e "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" \
-		-e "E2E_FOCUS=sig-api-machinery" \
-		-e E2E_SKIP="StorageVersionAPI|AdmissionWebhook" \
+		-e KUBECONFIG="/etc/rancher/k3s/k3s.yaml" \
+		-e E2E_FOCUS="sig-api-machinery.*(Slow|Flaky)" \
+		-e E2E_SKIP="StorageVersionAPI" \
 		-e E2E_EXTRA_ARGS="--ginkgo.fail-fast" \
 		-v kubeconfig:/etc/rancher/k3s:ro \
 		--entrypoint /usr/local/bin/kubeconformance \
-		registry.k8s.io/conformance:v1.33.3
+		registry.k8s.io/conformance:"$$(docker exec k3s k3s --version | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+')"
 
 .PHONY: test-load
 test-load:

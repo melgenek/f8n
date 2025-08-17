@@ -13,6 +13,9 @@ const (
 	notCommittedErrorCode = 1020 // Transaction not committed due to conflict with another transaction
 
 	logConflictingKeys = false
+
+	splitRangeAfterDuration  = 1 * time.Second
+	transactionMaxRetryCount = 1000
 )
 
 var forceRetryTransaction = func(i int) bool { return false }
@@ -52,10 +55,17 @@ func processRange(db fdb.Database, selector fdb.SelectorRange, collector Process
 
 func collectBatch(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) (batchResult, error) {
 	res, err := transact(db, batchResult{}, func(tr fdb.Transaction) (batchResult, error) {
-		start := time.Now()
-		it := tr.GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
-
 		res := batchResult{collectorNeedsMore: true, iteratorHasMore: true}
+		if err := tr.Options().SetTimeout(2 * splitRangeAfterDuration.Milliseconds()); err != nil {
+			return res, fmt.Errorf("failed to set timeout limit: %w", err)
+		}
+
+		start := time.Now()
+		// Snapshot read does not add read conflict ranges
+		// https://forums.foundationdb.org/t/java-why-is-setreadversion-not-part-of-readtransaction-readsnapshot/646/11
+		it := tr.Snapshot().GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
+
+		var firstKey fdb.KeyConvertible
 		collector.startBatch()
 		for i := 0; res.collectorNeedsMore && res.iteratorHasMore; i++ {
 			if !it.Advance() {
@@ -65,10 +75,13 @@ func collectBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 			if lastKey, collectorNeedsMore, err := collector.next(&tr, it); err != nil {
 				return res, err
 			} else {
+				if firstKey == nil {
+					firstKey = lastKey
+				}
 				res.lastReadKey = lastKey
 				res.collectorNeedsMore = collectorNeedsMore
 			}
-			if time.Since(start) > 1*time.Second {
+			if time.Since(start) > splitRangeAfterDuration {
 				break
 			}
 		}
@@ -94,7 +107,7 @@ func transact[T any](d fdb.Database, defaultValue T, f func(fdb.Transaction) (T,
 		defer panicToError(&e)
 
 		// https://forums.foundationdb.org/t/defaults-for-transaction-timeouts-and-retries/315/2
-		e = tr.Options().SetTimeout(30000) // 30 seconds
+		e = tr.Options().SetRetryLimit(transactionMaxRetryCount)
 		if e != nil {
 			return defaultValue, fmt.Errorf("failed to set timeout limit: %w", e)
 		}
@@ -141,7 +154,7 @@ func retryable[T any](wrapped func() (T, error), onError func(fdb.Error) fdb.Fut
 
 		if forceRetryTransaction(i) {
 			// commit_unknown_result
-			e = fdb.Error{1021}
+			e = fdb.Error{Code: 1021}
 		}
 
 		// No error means success!

@@ -243,7 +243,8 @@ func (c *recordCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.
 		c.batchCurrentRecord = nil
 	}
 
-	if c.maxRevision == 0 || versionstampToInt64(nextKeyAndRevRecord.Key.Rev) <= c.maxRevision {
+	recordRev := versionstampToInt64(nextKeyAndRevRecord.Key.Rev)
+	if (c.maxRevision == 0 || recordRev <= c.maxRevision) && (c.rev == 0 || recordRev <= c.rev) {
 		c.batchCurrentRecord = nextKeyAndRevRecord
 	}
 
@@ -261,13 +262,18 @@ func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
 		return err
 	}
 
-	if rev, err := tr.GetReadVersion().Get(); err != nil {
-		return err
-	} else {
-		c.batchRev = rev
+	// Get the read revision for the first batch.
+	// Do not read records that might've been concurrently added that are over this revision.
+	if c.rev == 0 {
+		if rev, err := tr.GetReadVersion().Get(); err != nil {
+			return err
+		} else {
+			c.batchRev = rev
+		}
 	}
 
-	if isLast && c.maxRevision > 0 {
+	// The requested revision has been compacted
+	if c.maxRevision > 0 {
 		if compactRev, err := c.f.compactRev.Get(tr); err != nil {
 			return err
 		} else if c.maxRevision < versionstampToInt64(compactRev) {

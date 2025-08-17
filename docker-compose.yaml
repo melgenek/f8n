@@ -10,7 +10,7 @@ services:
           done
           if ! fdbcli --exec status --timeout 3 ; then
             echo "creating the database"
-            if ! fdbcli --exec "configure new single ssd ; status" --timeout 10 ; then 
+            if ! fdbcli --exec "configure new single ssd ; status" --timeout 10 ; then
                 echo "Unable to configure new FDB cluster."
                 exit 1
             elif ! fdbcli --exec "configure single ssd ; status" --timeout 10 ; then
@@ -29,8 +29,6 @@ services:
     command:
       - --endpoint
       - "fdb://docker:docker@fdb:4500"
-    environment:
-      LOG_LEVEL: debug
   k3s:
     container_name: k3s
     depends_on:
@@ -39,12 +37,10 @@ services:
     privileged: true
     command:
       - server
-      - --disable=servicelb,traefik,local-storage,metrics-server
-      - --kube-apiserver-arg=etcd-compaction-interval=10s
-      - --kube-apiserver-arg=feature-gates=WatchList=true,VolumeAttributesClass=true,CoordinatedLeaderElection=true,DynamicResourceAllocation=true
-      - --kube-apiserver-arg=runtime-config=coordination.k8s.io/v1beta1=true,resource.k8s.io/v1beta1=true
+      - --disable=coredns,servicelb,traefik,local-storage,metrics-server
+      - --kube-apiserver-arg=feature-gates=WatchList=true,VolumeAttributesClass=true,CoordinatedLeaderElection=true,DynamicResourceAllocation=true,MutatingAdmissionPolicy=true
+      - --kube-apiserver-arg=runtime-config=coordination.k8s.io/v1beta1=true,resource.k8s.io/v1beta1=true,admissionregistration.k8s.io/v1alpha1=true
       - --disable-network-policy
-      - --flannel-iface=eth0
     environment:
       K3S_DATASTORE_ENDPOINT: "http://f8n:2379"
     volumes:

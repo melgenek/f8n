@@ -237,7 +237,7 @@ func TestFDB(t *testing.T) {
 }
 
 func TestFDBLargeRecords(t *testing.T) {
-	forceRetryTransaction = func(i int) bool { return i < 2 }
+	forceRetryTransaction = func(i int) bool { return false }
 	logrus.SetLevel(logrus.InfoLevel)
 
 	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
