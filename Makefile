@@ -29,13 +29,13 @@ test-conformance:
 		--name kubeconformance \
 		--network container:"$$(docker ps -q -f name='^k3s$$')" \
 		-e KUBECONFIG="/etc/rancher/k3s/k3s.yaml" \
-		-e E2E_FOCUS="Custom\sresource\sshould\shave\sstorage\sversion\shash" \
+		-e E2E_FOCUS="sig-api-machinery" \
 		-e E2E_SKIP="StorageVersionAPI|Slow|Flaky" \
 		-e E2E_EXTRA_ARGS="--ginkgo.fail-fast" \
 		-v kubeconfig:/etc/rancher/k3s:ro \
 		--entrypoint /usr/local/bin/kubeconformance \
 		registry.k8s.io/conformance:"$$(docker exec k3s k3s --version | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+')"
-		-#e E2E_FOCUS="sig-api-machinery" \
+#		-e E2E_FOCUS="Custom\sresource\sshould\shave\sstorage\sversion\shash" \
 
 .PHONY: test-conformance-flaky
 test-conformance-flaky:
