@@ -44,7 +44,6 @@ The implementation is in the `pkg/drivers/fdb` directory.
 ## TODO
 
 Here is a list of implementation details that need to be completed before starting scale testing of this implementation.
-- [ ] Watch operation has to account for long-running or large transactions. Make sure that in such case there are multiple consecutive FDB transactions. 
 - [ ] put ttl events into a separate slice
 - [ ] limit records to 2MiB
 
@@ -89,5 +88,6 @@ Here is a list of implementation details that need to be completed before starti
 - https://forums.foundationdb.org/t/relax-consistency-guarantees/1560/19
 - https://forums.foundationdb.org/t/generating-sortable-unique-id-primary-key-across-the-cluster-in-an-entity-relationship-model/3789/2
 - https://forums.foundationdb.org/t/foundationdb-read-performance/729/4
+- https://forums.foundationdb.org/t/ranges-without-explicit-end-go/773/13
 - 
 

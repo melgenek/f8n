@@ -145,7 +145,7 @@ func (c *listCollector) next(tr *fdb.Transaction, record *ByKeyAndRevisionRecord
 	}
 	c.batchIterators = append(c.batchIterators, recordIt)
 
-	if len(c.batchIterators) > 2 {
+	if len(c.batchIterators) >= 1 {
 		if err := c.fetchIterators(); err != nil {
 			return nil, false, err
 		}
@@ -154,7 +154,7 @@ func (c *listCollector) next(tr *fdb.Transaction, record *ByKeyAndRevisionRecord
 }
 
 func (c *listCollector) needMore() bool {
-	return c.limit == 0 || int64(len(c.batchIterators)+len(c.records)) < c.limit
+	return c.limit == 0 || int64(len(c.batchIterators)+len(c.batchRecords)+len(c.records)) < c.limit
 }
 
 func (c *listCollector) endBatch(*fdb.Transaction, bool) error {
@@ -166,8 +166,10 @@ func (c *listCollector) fetchIterators() error {
 		rev, record, err := c.f.byRevision.GetFromIterator(it)
 		if err != nil {
 			return err
+		} else if rev == nil {
+			return fmt.Errorf("no records in by rev iterator")
 		} else {
-			c.batchRecords = append(c.batchRecords, &RevRecord{Rev: rev, Record: record})
+			c.batchRecords = append(c.batchRecords, &RevRecord{Rev: *rev, Record: record})
 		}
 	}
 	c.batchIterators = c.batchIterators[len(c.batchIterators):]
@@ -175,9 +177,7 @@ func (c *listCollector) fetchIterators() error {
 }
 
 func (c *listCollector) postBatch() {
-	for _, record := range c.batchRecords {
-		c.records = append(c.records, record)
-	}
+	c.records = append(c.records, c.batchRecords...)
 }
 
 func (c *listCollector) String() string {
@@ -213,6 +213,10 @@ func (c *recordCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.
 	if err != nil {
 		return nil, false, err
 	}
+	if nextKeyAndRevRecord == nil {
+		return nil, false, nil
+	}
+
 	if c.batchCurrentRecord != nil && c.batchCurrentRecord.Key.Key != nextKeyAndRevRecord.Key.Key {
 		if !c.batchCurrentRecord.Value.IsDelete {
 			if _, _, err := c.inner.next(tr, c.batchCurrentRecord); err != nil {

@@ -28,20 +28,23 @@ func (c *compactProcessor) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb
 	if err != nil {
 		return nil, false, err
 	}
+	if rev == nil {
+		return nil, false, nil
+	}
 
 	lastRecord, err := c.f.getLast(tr, record.Key)
 	if err != nil {
 		return nil, false, err
 	}
 
-	if lastRecord.Key.Rev != rev || record.IsDelete {
-		c.f.byKeyAndRevision.Delete(tr, &KeyAndRevision{Key: record.Key, Rev: rev})
-		if err := c.f.byRevision.Delete(tr, rev); err != nil {
+	if lastRecord.Key.Rev != *rev || record.IsDelete {
+		c.f.byKeyAndRevision.Delete(tr, &KeyAndRevision{Key: record.Key, Rev: *rev})
+		if err := c.f.byRevision.Delete(tr, *rev); err != nil {
 			return nil, false, err
 		}
 	}
-	c.batchCompacted = rev
-	return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{rev}), true, nil
+	c.batchCompacted = *rev
+	return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev}), true, nil
 }
 
 func (c *compactProcessor) endBatch(tr *fdb.Transaction, isLast bool) error {

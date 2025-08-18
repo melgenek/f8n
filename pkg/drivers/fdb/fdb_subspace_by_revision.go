@@ -111,28 +111,28 @@ func (s *ByRevisionSubspace) GetIterator(tr *fdb.Transaction, rev tuple.Versions
 	return it, nil
 }
 
-func (s *ByRevisionSubspace) GetFromIterator(it *fdb.RangeIterator) (tuple.Versionstamp, *Record, error) {
+func (s *ByRevisionSubspace) GetFromIterator(it *fdb.RangeIterator) (*tuple.Versionstamp, *Record, error) {
 	if !it.Advance() {
-		return dummyVersionstamp, nil, nil
+		return nil, nil, nil
 	}
 	kv, err := it.Get()
 	if err != nil {
-		return dummyVersionstamp, nil, err
+		return nil, nil, err
 	}
 	rev, record, err := s.ParseKV(kv)
 	if err != nil {
-		return dummyVersionstamp, nil, err
+		return nil, nil, err
 	}
 	if record.ValueSize > int64(len(record.Value)) {
 		buf := make([]byte, record.ValueSize)
 		copy(buf, record.Value)
 		offset := len(record.Value)
 		if err := s.getBlob(it, buf, offset); err != nil {
-			return dummyVersionstamp, nil, err
+			return nil, nil, err
 		}
 		record.Value = buf
 	}
-	return rev, record, nil
+	return &rev, record, nil
 }
 
 func (s *ByRevisionSubspace) getBlob(it *fdb.RangeIterator, buf []byte, offset int) error {

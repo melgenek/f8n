@@ -61,6 +61,9 @@ func (s *ByKeyAndRevisionSubspace) Delete(tr *fdb.Transaction, key *KeyAndRevisi
 }
 
 func (s *ByKeyAndRevisionSubspace) GetFromIterator(it *fdb.RangeIterator) (*ByKeyAndRevisionRecord, error) {
+	if !it.Advance() {
+		return nil, nil
+	}
 	kv, err := it.Get()
 	if err != nil {
 		return nil, err

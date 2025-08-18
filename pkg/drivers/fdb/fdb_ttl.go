@@ -118,7 +118,7 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 		defer close(result)
 
 		collector := newListCollector(f, 1000)
-		rev, err := f.listWithCollector("ttl1", "/", "/", 0, collector)
+		rev, err := f.listWithCollector("ttl1", "/", "", 0, collector)
 		revRecords := collector.records
 		for len(revRecords) > 0 {
 			if err != nil {

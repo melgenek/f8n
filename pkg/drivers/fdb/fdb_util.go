@@ -15,6 +15,7 @@ const (
 	logConflictingKeys = false
 
 	splitRangeAfterDuration  = 1 * time.Second
+	transactionTimeout       = 10 * time.Second
 	transactionMaxRetryCount = 1000
 )
 
@@ -30,21 +31,17 @@ type Processor[T any] interface {
 type batchResult struct {
 	lastReadKey        fdb.KeyConvertible
 	collectorNeedsMore bool
-	iteratorHasMore    bool
 }
 
 func processRange(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) error {
 	beginSelector := selector.Begin
 
 	for i := 0; ; i++ {
-		res, err := collectBatch(db, fdb.SelectorRange{Begin: beginSelector, End: selector.End}, collector)
+		res, err := processBatch(db, fdb.SelectorRange{Begin: beginSelector, End: selector.End}, collector)
 		if err != nil {
 			return err
 		}
 		if !res.collectorNeedsMore {
-			break
-		}
-		if !res.iteratorHasMore {
 			break
 		}
 		beginSelector = fdb.FirstGreaterThan(res.lastReadKey)
@@ -53,10 +50,19 @@ func processRange(db fdb.Database, selector fdb.SelectorRange, collector Process
 	return nil
 }
 
-func collectBatch(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) (batchResult, error) {
+func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) (batchResult, error) {
+	before := time.Now()
+	defer func() {
+		dur := time.Since(before)
+
+		if dur > 2*splitRangeAfterDuration {
+			logrus.Warnf("BATCH %s => duration=%s", selector, dur)
+		}
+	}()
+
 	res, err := transact(db, batchResult{}, func(tr fdb.Transaction) (batchResult, error) {
-		res := batchResult{collectorNeedsMore: true, iteratorHasMore: true}
-		if err := tr.Options().SetTimeout(2 * splitRangeAfterDuration.Milliseconds()); err != nil {
+		res := batchResult{collectorNeedsMore: true}
+		if err := tr.Options().SetTimeout(transactionTimeout.Milliseconds()); err != nil {
 			return res, fmt.Errorf("failed to set timeout limit: %w", err)
 		}
 
@@ -67,11 +73,7 @@ func collectBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 
 		var firstKey fdb.KeyConvertible
 		collector.startBatch()
-		for i := 0; res.collectorNeedsMore && res.iteratorHasMore; i++ {
-			if !it.Advance() {
-				res.iteratorHasMore = false
-				break
-			}
+		for i := 0; res.collectorNeedsMore; i++ {
 			if lastKey, collectorNeedsMore, err := collector.next(&tr, it); err != nil {
 				return res, err
 			} else {
@@ -79,14 +81,14 @@ func collectBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 					firstKey = lastKey
 				}
 				res.lastReadKey = lastKey
-				res.collectorNeedsMore = collectorNeedsMore
+				res.collectorNeedsMore = collectorNeedsMore && lastKey != nil
 			}
 			if time.Since(start) > splitRangeAfterDuration {
 				break
 			}
 		}
 
-		if err := collector.endBatch(&tr, !res.iteratorHasMore); err != nil {
+		if err := collector.endBatch(&tr, !res.collectorNeedsMore); err != nil {
 			return res, err
 		}
 

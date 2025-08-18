@@ -3,11 +3,12 @@ package fdb
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sync/errgroup"
+	"math/rand"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 )
 
 func TestFDB(t *testing.T) {
-	forceRetryTransaction = func(i int) bool { return i < 2 }
+	forceRetryTransaction = func(i int) bool { return false }
 
 	logrus.SetLevel(logrus.InfoLevel)
 	n := 4
@@ -247,8 +248,18 @@ func TestFDBLargeRecords(t *testing.T) {
 	err := f.Start(ctx)
 	require.NoError(t, err)
 
+	watchLarge := f.Watch(ctx, "/large/", 0)
+
 	recordCount := 300
 	records := createLargeRecords(t, f, ctx, recordCount)
+
+	for i := 0; i < recordCount; {
+		batch := <-watchLarge.Events
+		for _, watchedEvent := range batch {
+			i++
+			require.Equal(t, records[watchedEvent.KV.Key], watchedEvent.KV.Value, "watched value for key '%s' does not match", watchedEvent.KV.Key)
+		}
+	}
 
 	// Get record
 	_, kv, err := f.Get(ctx, "/large/key42", "", 0, 0)
@@ -442,18 +453,27 @@ func createLargeRecords(t *testing.T, f server.Backend, ctx context.Context, rec
 	records := make(map[string][]byte, recordCount)
 	for i := 0; i < recordCount; i++ {
 		key := fmt.Sprintf("/large/key%d", i)
-		value := make([]byte, recordSize)
-		_, err := rand.Read(value)
-		require.NoError(t, err)
-		records[key] = value
+		value := randomString(recordSize)
+		records[key] = []byte(value)
 		v := func(key string, value []byte) (e error) {
 			_, err := f.Create(ctx, key, value, 0)
 			return err
 		}
-		g.Go(func() error { return v(key, value) })
+		g.Go(func() error { return v(key, []byte(value)) })
 	}
 	require.NoError(t, g.Wait())
 	return records
+}
+
+const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func randomString(n int) string {
+	var sb strings.Builder
+	sb.Grow(n)
+	for i := 0; i < n; i++ {
+		sb.WriteByte(letters[rand.Intn(len(letters))])
+	}
+	return sb.String()
 }
 
 func orEmpty(result []*server.KeyValue) []*server.KeyValue {
