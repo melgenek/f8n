@@ -1,6 +1,7 @@
 package fdb
 
 import (
+	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
@@ -51,11 +52,8 @@ func (s *ByRevisionSubspace) GetSubspace() subspace.Subspace {
 
 func (s *ByRevisionSubspace) Write(tr *fdb.Transaction, rev tuple.Versionstamp, record *Record) error {
 	record.ValueSize = int64(len(record.Value))
-	if len(record.Value) > chunkSize {
-		if err := s.writeBlob(tr, rev, record.Value[chunkSize:]); err != nil {
-			return err
-		}
-		record.Value = record.Value[:chunkSize]
+	if err := s.writeBlob(tr, rev, record.Value); err != nil {
+		return err
 	}
 
 	if revisionKey, err := s.subspace.PackWithVersionstamp(tuple.Tuple{rev}); err != nil {
@@ -70,15 +68,18 @@ func (s *ByRevisionSubspace) Write(tr *fdb.Transaction, rev tuple.Versionstamp, 
 func (s *ByRevisionSubspace) ParseKV(kv fdb.KeyValue) (tuple.Versionstamp, *Record, error) {
 	k, err := s.subspace.Unpack(kv.Key)
 	if err != nil {
-		return dummyVersionstamp, nil, err
+		return dummyVersionstamp, nil, fmt.Errorf("failed to unpack key %v: %w", kv.Key, err)
 	}
 	versionstamp := k[0].(tuple.Versionstamp)
+	if len(k) != 1 {
+		panic(fmt.Sprintf("can parse only the first entry for the record. Key: %v", k))
+	}
 	unpackedTuple, err := tuple.Unpack(kv.Value)
 	if err != nil {
-		return dummyVersionstamp, nil, err
+		return dummyVersionstamp, nil, fmt.Errorf("failed to unpack value '%v': %w", kv.Value, err)
 	}
-	event := tupleToRecord(unpackedTuple)
-	return versionstamp, event, nil
+	record := tupleToRecord(unpackedTuple)
+	return versionstamp, record, nil
 }
 
 func (s *ByRevisionSubspace) Get(tr *fdb.Transaction, rev tuple.Versionstamp) (*Record, error) {
@@ -123,20 +124,16 @@ func (s *ByRevisionSubspace) GetFromIterator(it *fdb.RangeIterator) (*tuple.Vers
 	if err != nil {
 		return nil, nil, err
 	}
-	if record.ValueSize > int64(len(record.Value)) {
-		buf := make([]byte, record.ValueSize)
-		copy(buf, record.Value)
-		offset := len(record.Value)
-		if err := s.getBlob(it, buf, offset); err != nil {
-			return nil, nil, err
-		}
-		record.Value = buf
+	buf := make([]byte, record.ValueSize)
+	if err := s.getBlob(it, buf); err != nil {
+		return nil, nil, err
 	}
+	record.Value = buf
 	return &rev, record, nil
 }
 
-func (s *ByRevisionSubspace) getBlob(it *fdb.RangeIterator, buf []byte, offset int) error {
-	for offset != len(buf) && it.Advance() {
+func (s *ByRevisionSubspace) getBlob(it *fdb.RangeIterator, buf []byte) error {
+	for offset := 0; offset != len(buf) && it.Advance(); {
 		if chunkKv, err := it.Get(); err != nil {
 			return err
 		} else {
@@ -172,7 +169,6 @@ func recordToTuple(record *Record) tuple.Tuple {
 		record.CreateRevision,
 		record.PrevRevision,
 		record.ValueSize,
-		record.Value,
 	}
 }
 
@@ -185,6 +181,5 @@ func tupleToRecord(t tuple.Tuple) *Record {
 		CreateRevision: t[4].(tuple.Versionstamp),
 		PrevRevision:   t[5].(tuple.Versionstamp),
 		ValueSize:      t[6].(int64),
-		Value:          t[7].([]byte),
 	}
 }

@@ -7,7 +7,10 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 )
+
+const maxRecordSize = 2 * 1024 * 1024 // 2 MiB
 
 type writeResult struct {
 	keyFuture    fdb.FutureKey
@@ -61,6 +64,10 @@ func (r *writeResult) getResult() (int64, *server.KeyValue, bool, error) {
 }
 
 func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (int64, error) {
+	if len(value) > maxRecordSize {
+		return 0, rpctypes.ErrRequestTooLarge
+	}
+
 	// Use a UUID to avoid duplicate writes in case of transaction retries.
 	// https://apple.github.io/foundationdb/automatic-idempotency.html
 	lastWriteUUID := createUUID()
@@ -116,6 +123,10 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 }
 
 func (f *FDB) Update(_ context.Context, key string, value []byte, revision, lease int64) (int64, *server.KeyValue, bool, error) {
+	if len(value) > maxRecordSize {
+		return 0, nil, false, rpctypes.ErrRequestTooLarge
+	}
+
 	lastWriteUUID := createUUID()
 	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
 		lastRecord, err := f.getLast(&tr, key)

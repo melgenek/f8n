@@ -43,6 +43,7 @@ func int64ToVersionstamp(minRevision int64) tuple.Versionstamp {
 	return beginVersionstamp
 }
 
+var zeroVersionstamp = int64ToVersionstamp(0)
 var dummyVersionstamp = createDummyVersionstamp()
 
 func createDummyVersionstamp() tuple.Versionstamp {

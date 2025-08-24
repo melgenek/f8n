@@ -1,6 +1,7 @@
 package fdb
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,11 +9,13 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
+	"math"
 	"strings"
 )
 
 // https://github.com/etcd-io/etcd/blob/f072712e29a2dafc92e7cfb3c76cea60e0d508b2/server/storage/mvcc/watcher_group.go#L28
-const maxBatchSize = 1000
+// `var` is for testing purposes
+var maxBatchSize = 1000
 
 type AfterResult struct {
 	currentRevision int64
@@ -39,15 +42,19 @@ func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.W
 	wr := server.WatchResult{Events: result, Errorc: errc}
 
 	// initial read
-	afterResult, err := f.afterAll(revision, 0, func(key string) bool {
+	versionstampRev := int64ToVersionstamp(revision)
+	collector := newAfterCollector(f, versionstampRev, 0, func(key string) bool {
 		return doesEventHavePrefix(key, prefix)
 	})
-	logrus.Tracef("AFTER key=%s rev=%d => res=%v err=%v", prefix, revision, result, err)
+	selector := f.afterRevisionRangeSelector(f.byRevision.GetSubspace().Pack(tuple.Tuple{revision}))
+	_, err := processRange(f.db, selector, collector)
+
+	logrus.Tracef("INITIAL POLL key=%s rev=%d => res=%v err=%v", prefix, revision, len(collector.events), err)
 	if err != nil {
 		logrus.Errorf("Failed to 'afterAll' %s for revision %d: %v", prefix, revision, err)
 		if errors.Is(err, server.ErrCompacted) {
-			wr.CompactRevision = afterResult.compactRevision
-			wr.CurrentRevision = afterResult.currentRevision
+			wr.CompactRevision = collector.compactRevision
+			wr.CurrentRevision = collector.rev
 		} else {
 			errc <- server.ErrGRPCUnhealthy
 		}
@@ -56,10 +63,9 @@ func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.W
 	}
 
 	go func() {
-		lastRevision := afterResult.currentRevision
-
-		if len(afterResult.events) > 0 {
-			result <- afterResult.events
+		lastRevision := collector.rev
+		if len(collector.events) > 0 {
+			result <- collector.events
 		}
 
 		for events := range readChan {
@@ -120,7 +126,7 @@ func (f *FDB) startWatch() (chan interface{}, error) {
 }
 
 func (f *FDB) poll(result chan interface{}, pollStart int64) {
-	currentRev := pollStart
+	currentRev := f.byRevision.GetSubspace().Pack(tuple.Tuple{int64ToVersionstamp(pollStart)})
 
 	defer close(result)
 
@@ -138,15 +144,36 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 			continue
 		}
 
-		var afterResult *AfterResult
-		for afterResult, err = f.afterBatch(currentRev, maxBatchSize, func(s string) bool { return true }); err != nil; {
-			logrus.Errorf("Error in 'afterBatch' err=%v", err)
-		}
-		logrus.Tracef("AFTER POLL rev=%d => res=%v err=%v", currentRev, result, err)
+		beforeRangeRev := currentRev
+		totalReadEvents := 0
+		lastBatchResult := batchResult{streamHasMore: true}
+		for lastBatchResult.streamHasMore {
+			selector := f.afterRevisionRangeSelector(currentRev)
+			collector := newAfterCollector(f, zeroVersionstamp, maxBatchSize, func(s string) bool { return true })
+			lastBatchResult, err = processRange(f.db, selector, collector)
 
-		currentRev = afterResult.currentRevision
-		if len(afterResult.events) > 0 {
-			result <- afterResult.events
+			if err != nil {
+				logrus.Errorf("Error in 'poll.processRange' lastKey=%v err=%v", lastBatchResult, err)
+				continue
+			} else {
+				if lastBatchResult.lastReadKey != nil {
+					currentRev = lastBatchResult.lastReadKey
+				} else {
+					currentRev = f.byRevision.GetSubspace().Pack(tuple.Tuple{int64ToVersionstamp(collector.rev)})
+				}
+
+				if len(collector.events) > 0 {
+					result <- collector.events
+				}
+				totalReadEvents += len(collector.events)
+				logrus.Tracef(
+					"AFTER POLL rev=%v => rev=%v hasMore=%v needsMore=%v res=%v err=%v",
+					beforeRangeRev, currentRev, lastBatchResult.streamHasMore, lastBatchResult.collectorNeedsMore, totalReadEvents, err,
+				)
+			}
+		}
+
+		if totalReadEvents > 0 {
 			watchFuture.(fdb.FutureNil).Cancel()
 		} else if err := watchFuture.(fdb.FutureNil).Get(); err != nil {
 			logrus.Errorf("Error waiting for a watch err=%v", err)
@@ -156,11 +183,10 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 
 type afterCollector struct {
 	// input
-	f              *FDB
-	limit          int64
-	checkCompacted bool
-	minRevision    int64
-	takeKey        func(string) bool
+	f           *FDB
+	limit       int
+	minRevision tuple.Versionstamp
+	takeKey     func(string) bool
 	// output
 	batchEvents     []*server.Event
 	events          []*server.Event
@@ -170,19 +196,14 @@ type afterCollector struct {
 	batchRev        int64
 }
 
-func newAfterCollector(f *FDB, limit int64, checkCompacted bool, minRevision int64, takeKey func(string) bool) *afterCollector {
-	capacity := limit
-	if capacity == 0 {
-		capacity = 100
-	}
+func newAfterCollector(f *FDB, minRevision tuple.Versionstamp, limit int, takeKey func(string) bool) *afterCollector {
 	return &afterCollector{
-		f:              f,
-		limit:          limit,
-		takeKey:        takeKey,
-		minRevision:    minRevision,
-		checkCompacted: checkCompacted,
-		batchEvents:    make([]*server.Event, 0, capacity),
-		events:         make([]*server.Event, 0, capacity),
+		f:           f,
+		limit:       limit,
+		takeKey:     takeKey,
+		minRevision: minRevision,
+		batchEvents: make([]*server.Event, 0, 1000),
+		events:      make([]*server.Event, 0, 1000),
 	}
 }
 
@@ -192,7 +213,7 @@ func (c *afterCollector) startBatch() {
 	c.batchCompactRev = 0
 }
 
-func (c *afterCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.KeyConvertible, bool, error) {
+func (c *afterCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.Key, bool, error) {
 	rev, record, err := c.f.byRevision.GetFromIterator(it)
 	if err != nil {
 		return nil, false, err
@@ -202,7 +223,7 @@ func (c *afterCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.K
 	}
 
 	if c.rev != 0 && versionstampToInt64(*rev) > c.rev {
-		return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev}), false, nil
+		return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), false, nil
 	}
 
 	if c.takeKey(record.Key) {
@@ -224,11 +245,11 @@ func (c *afterCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.K
 		c.batchEvents = append(c.batchEvents, event)
 	}
 
-	return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev}), c.needMore(), nil
+	return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), c.needMore(), nil
 }
 
 func (c *afterCollector) needMore() bool {
-	return c.limit == 0 || int64(len(c.batchEvents)+len(c.events)) < c.limit
+	return c.limit == 0 || len(c.batchEvents)+len(c.events) < c.limit
 }
 
 func (c *afterCollector) endBatch(tr *fdb.Transaction, _ bool) error {
@@ -240,12 +261,12 @@ func (c *afterCollector) endBatch(tr *fdb.Transaction, _ bool) error {
 		c.batchRev = rev
 	}
 
-	if c.checkCompacted {
+	if !bytes.Equal(c.minRevision.Bytes(), zeroVersionstamp.Bytes()) {
 		compactRev, err := c.f.compactRev.Get(tr)
 		if err != nil {
 			return err
 		}
-		if c.minRevision > 0 && c.minRevision < versionstampToInt64(compactRev) {
+		if bytes.Compare(c.minRevision.Bytes(), compactRev.Bytes()) < 0 {
 			c.batchCompactRev = versionstampToInt64(compactRev)
 			return server.ErrCompacted
 		}
@@ -259,35 +280,7 @@ func (c *afterCollector) postBatch() {
 	c.compactRevision = c.batchCompactRev
 }
 
-func (f *FDB) afterAll(minRevision, limit int64, takeKey func(string) bool) (*AfterResult, error) {
-	selector := f.afterRevisionSelector(minRevision)
-
-	collector := newAfterCollector(f, limit, true, minRevision, takeKey)
-	err := processRange(f.db, selector, collector)
-	return &AfterResult{
-		currentRevision: collector.rev,
-		compactRevision: collector.compactRevision,
-		events:          collector.events,
-	}, err
-}
-
-func (f *FDB) afterBatch(minRevision, limit int64, takeKey func(string) bool) (*AfterResult, error) {
-	selector := f.afterRevisionSelector(minRevision)
-
-	collector := newAfterCollector(f, limit, false, minRevision, takeKey)
-	_, err := processBatch(f.db, selector, collector)
-	rev := collector.rev
-	if len(collector.events) > 0 {
-		rev = collector.events[len(collector.events)-1].KV.ModRevision
-	}
-	return &AfterResult{
-		currentRevision: rev,
-		events:          collector.events,
-	}, err
-}
-
-func (f *FDB) afterRevisionSelector(minRevision int64) fdb.SelectorRange {
-	begin := f.byRevision.GetSubspace().Pack(tuple.Tuple{int64ToVersionstamp(minRevision)})
+func (f *FDB) afterRevisionRangeSelector(begin fdb.Key) fdb.SelectorRange {
 	_, end := f.byRevision.GetSubspace().FDBRangeKeySelectors()
 
 	// https://forums.foundationdb.org/t/ranges-without-explicit-end-go/773/11

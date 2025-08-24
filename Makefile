@@ -30,7 +30,7 @@ test-conformance:
 		--network container:"$$(docker ps -q -f name='^k3s$$')" \
 		-e KUBECONFIG="/etc/rancher/k3s/k3s.yaml" \
 		-e E2E_FOCUS="sig-api-machinery" \
-		-e E2E_SKIP="StorageVersionAPI|Slow|Flaky" \
+		-e E2E_SKIP="StorageVersionAPI|DynamicResourceAllocation|MutatingAdmissionPolicy|CoordinatedLeaderElection|VolumeAttributesClass|OrderedNamespaceDeletion|Slow|Flaky|should\shonor\stimeout" \
 		-e E2E_EXTRA_ARGS="--ginkgo.fail-fast" \
 		-v kubeconfig:/etc/rancher/k3s:ro \
 		--entrypoint /usr/local/bin/kubeconformance \

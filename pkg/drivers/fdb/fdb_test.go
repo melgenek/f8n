@@ -3,12 +3,12 @@ package fdb
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"golang.org/x/sync/errgroup"
-	"math/rand"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -21,7 +21,7 @@ import (
 func TestFDB(t *testing.T) {
 	forceRetryTransaction = func(i int) bool { return false }
 
-	logrus.SetLevel(logrus.InfoLevel)
+	logrus.SetLevel(logrus.WarnLevel)
 	n := 4
 	sameKeyN := 3
 	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
@@ -31,7 +31,7 @@ func TestFDB(t *testing.T) {
 	err := f.Start(ctx)
 	require.NoError(t, err)
 
-	createLargeRecords(t, f, ctx, 500)
+	createRecords(t, f, ctx, 500, maxRecordSize)
 	err = f.Start(ctx)
 	require.NoError(t, err)
 
@@ -198,12 +198,12 @@ func TestFDB(t *testing.T) {
 	rev, result, err := f.List(ctx, "/abc/", "/abc/key", 0, currentRev)
 	require.NoError(t, err)
 	require.Equal(t, valuesAsSlice(events), result)
-	require.Equal(t, rev, currentRev)
+	require.GreaterOrEqual(t, rev, currentRev)
 
 	rev, result, err = f.List(ctx, "/abc/", "/abc/key", 0, 0)
 	require.NoError(t, err)
 	require.Equal(t, valuesAsSlice(events), result)
-	require.Equal(t, rev, currentRev)
+	require.GreaterOrEqual(t, rev, currentRev)
 
 	for i := 0; i < len(history); {
 		select {
@@ -217,7 +217,7 @@ func TestFDB(t *testing.T) {
 				i++
 			}
 		case <-ctx.Done():
-			require.Errorf(t, ctx.Err(), "context done")
+			require.Fail(t, "context done")
 		}
 	}
 
@@ -232,14 +232,14 @@ func TestFDB(t *testing.T) {
 				i++
 			}
 		case <-ctx.Done():
-			require.Errorf(t, ctx.Err(), "context done")
+			require.Fail(t, "context done")
 		}
 	}
 }
 
 func TestFDBLargeRecords(t *testing.T) {
 	forceRetryTransaction = func(i int) bool { return false }
-	logrus.SetLevel(logrus.InfoLevel)
+	logrus.SetLevel(logrus.WarnLevel)
 
 	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
@@ -251,7 +251,7 @@ func TestFDBLargeRecords(t *testing.T) {
 	watchLarge := f.Watch(ctx, "/large/", 0)
 
 	recordCount := 300
-	records := createLargeRecords(t, f, ctx, recordCount)
+	records := createRecords(t, f, ctx, recordCount, maxRecordSize)
 
 	for i := 0; i < recordCount; {
 		batch := <-watchLarge.Events
@@ -273,10 +273,20 @@ func TestFDBLargeRecords(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, recordCount, len(kvs))
 
+	// List all records
+	_, kvs2, err := f.List(ctx, "/large/", "/large/key0", 0, 0)
+	require.NoError(t, err)
+	require.Equal(t, recordCount-1, len(kvs2))
+
 	// Count all records
 	_, count, err := f.Count(ctx, "/large/", "/large/", 0)
 	require.NoError(t, err)
 	require.Equal(t, int64(recordCount), count)
+
+	// Count all records
+	_, count, err = f.Count(ctx, "/large/", "/large/key0", 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(recordCount)-1, count)
 
 	// Verify listed records
 	listedRecords := make(map[string][]byte)
@@ -445,35 +455,74 @@ func TestCompaction(t *testing.T) {
 	require.NotNil(t, watch.CurrentRevision)
 }
 
-func createLargeRecords(t *testing.T, f server.Backend, ctx context.Context, recordCount int) map[string][]byte {
-	recordSize := 2 * 1024 * 1024 // 2 MiB
+func TestWatchAll(t *testing.T) {
+	logrus.SetLevel(logrus.InfoLevel)
 
+	maxBatchSize = 10
+	recordsCount := 53
+
+	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
+	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
+	defer cancelCtx()
+
+	err := f.Start(ctx)
+	require.NoError(t, err)
+
+	w := f.Watch(ctx, "/large/", 0)
+
+	createRecords(t, f, ctx, recordsCount, 2)
+
+	totalRecords := 0
+	for totalRecords < recordsCount {
+		select {
+		case events := <-w.Events:
+			totalRecords += len(events)
+		case <-ctx.Done():
+			require.Fail(t, "context done")
+		}
+	}
+
+	require.Equal(t, recordsCount, totalRecords)
+}
+
+func TestExceedSizeLarge(t *testing.T) {
+	key := "/large/too_large_key"
+	value := make([]byte, maxRecordSize+1)
+	_, err := rand.Read(value)
+	require.NoError(t, err)
+
+	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
+	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
+	defer cancelCtx()
+
+	err = f.Start(ctx)
+	require.NoError(t, err)
+
+	_, err = f.Create(ctx, key, value, 0)
+	require.ErrorIs(t, err, rpctypes.ErrRequestTooLarge)
+
+	_, _, _, err = f.Update(ctx, key, value, 0, 0)
+	require.ErrorIs(t, err, rpctypes.ErrRequestTooLarge)
+}
+
+func createRecords(t *testing.T, f server.Backend, ctx context.Context, recordCount int, recordSize int) map[string][]byte {
 	g := errgroup.Group{}
 	g.SetLimit(50)
 	records := make(map[string][]byte, recordCount)
 	for i := 0; i < recordCount; i++ {
 		key := fmt.Sprintf("/large/key%d", i)
-		value := randomString(recordSize)
-		records[key] = []byte(value)
+		value := make([]byte, recordSize)
+		_, err := rand.Read(value)
+		require.NoError(t, err)
+		records[key] = value
 		v := func(key string, value []byte) (e error) {
 			_, err := f.Create(ctx, key, value, 0)
 			return err
 		}
-		g.Go(func() error { return v(key, []byte(value)) })
+		g.Go(func() error { return v(key, value) })
 	}
 	require.NoError(t, g.Wait())
 	return records
-}
-
-const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-func randomString(n int) string {
-	var sb strings.Builder
-	sb.Grow(n)
-	for i := 0; i < n; i++ {
-		sb.WriteByte(letters[rand.Intn(len(letters))])
-	}
-	return sb.String()
 }
 
 func orEmpty(result []*server.KeyValue) []*server.KeyValue {

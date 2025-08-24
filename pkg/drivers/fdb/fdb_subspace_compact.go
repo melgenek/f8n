@@ -22,14 +22,14 @@ func (s *CompactRevisionSubspace) Write(tr *fdb.Transaction, rev tuple.Versionst
 func (s *CompactRevisionSubspace) Get(tr *fdb.Transaction) (tuple.Versionstamp, error) {
 	value, err := tr.Get(s.subspace).Get()
 	if err != nil {
-		return dummyVersionstamp, err
+		return zeroVersionstamp, err
 	}
 	t, err := tuple.Unpack(value)
 	if err != nil {
-		return dummyVersionstamp, err
+		return zeroVersionstamp, err
 	}
 	if value == nil {
-		return dummyVersionstamp, nil
+		return zeroVersionstamp, nil
 	}
 	return t[0].(tuple.Versionstamp), nil
 }

@@ -23,31 +23,34 @@ var forceRetryTransaction = func(i int) bool { return false }
 
 type Processor[T any] interface {
 	startBatch()
-	next(tr *fdb.Transaction, record T) (fdb.KeyConvertible, bool, error)
+	next(tr *fdb.Transaction, record T) (fdb.Key, bool, error)
 	endBatch(tr *fdb.Transaction, isLast bool) error
 	postBatch()
 }
 
 type batchResult struct {
-	lastReadKey        fdb.KeyConvertible
+	lastReadKey        fdb.Key
 	collectorNeedsMore bool
+	streamHasMore      bool
 }
 
-func processRange(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) error {
+func processRange(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) (batchResult, error) {
 	beginSelector := selector.Begin
 
+	var lastBatchResult batchResult
 	for i := 0; ; i++ {
 		res, err := processBatch(db, fdb.SelectorRange{Begin: beginSelector, End: selector.End}, collector)
 		if err != nil {
-			return err
+			return lastBatchResult, err
 		}
-		if !res.collectorNeedsMore {
+		lastBatchResult = res
+		if !res.collectorNeedsMore || !res.streamHasMore {
 			break
 		}
 		beginSelector = fdb.FirstGreaterThan(res.lastReadKey)
 	}
 
-	return nil
+	return lastBatchResult, nil
 }
 
 func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) (batchResult, error) {
@@ -81,14 +84,17 @@ func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 					firstKey = lastKey
 				}
 				res.lastReadKey = lastKey
-				res.collectorNeedsMore = collectorNeedsMore && lastKey != nil
+				res.collectorNeedsMore = collectorNeedsMore
+				res.streamHasMore = lastKey != nil
 			}
-			if time.Since(start) > splitRangeAfterDuration {
+			dur := time.Since(start)
+			if dur > splitRangeAfterDuration {
+				logrus.Tracef("SPLITTING RANGE READ i=%d dur=%v => rev=%v res=%v", i, dur, res.lastReadKey, res.collectorNeedsMore)
 				break
 			}
 		}
 
-		if err := collector.endBatch(&tr, !res.collectorNeedsMore); err != nil {
+		if err := collector.endBatch(&tr, !res.collectorNeedsMore || !res.streamHasMore); err != nil {
 			return res, err
 		}
 

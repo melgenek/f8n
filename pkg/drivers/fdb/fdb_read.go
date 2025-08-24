@@ -80,7 +80,7 @@ func (c *countCollector) startBatch() {
 	c.batchCount = 0
 }
 
-func (c *countCollector) next(*fdb.Transaction, *ByKeyAndRevisionRecord) (fdb.KeyConvertible, bool, error) {
+func (c *countCollector) next(*fdb.Transaction, *ByKeyAndRevisionRecord) (fdb.Key, bool, error) {
 	c.batchCount++
 	return nil, true, nil
 }
@@ -138,7 +138,7 @@ func (c *listCollector) startBatch() {
 	c.batchRecords = c.batchRecords[len(c.batchRecords):]
 }
 
-func (c *listCollector) next(tr *fdb.Transaction, record *ByKeyAndRevisionRecord) (fdb.KeyConvertible, bool, error) {
+func (c *listCollector) next(tr *fdb.Transaction, record *ByKeyAndRevisionRecord) (fdb.Key, bool, error) {
 	recordIt, err := c.f.byRevision.GetIterator(tr, record.Key.Rev)
 	if err != nil {
 		return nil, false, err
@@ -208,7 +208,7 @@ func (c *recordCollector) startBatch() {
 	c.batchRev = 0
 }
 
-func (c *recordCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.KeyConvertible, bool, error) {
+func (c *recordCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.Key, bool, error) {
 	nextKeyAndRevRecord, err := c.f.byKeyAndRevision.GetFromIterator(it)
 	if err != nil {
 		return nil, false, err
@@ -327,7 +327,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 	}
 
 	rc := newRecordCollector(f, maxRevision, collector)
-	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, rc)
+	_, err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, rc)
 	if err != nil {
 		return 0, err
 	}
