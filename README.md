@@ -28,6 +28,6 @@ make start-k3s
 ```
 docker exec k3s kubectl get nodes -A
 
-NAME           STATUS   ROLES                  AGE   VERSION
-6669177524ca   Ready    control-plane,master   7s    v1.33.3+k3s1
+NAME           STATUS   ROLES                  AGE    VERSION
+6669177524ca   Ready    control-plane,master   5m4s   v1.33.3+k3s1
 ```
