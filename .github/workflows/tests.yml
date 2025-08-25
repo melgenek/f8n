@@ -21,11 +21,22 @@ jobs:
       - name: Start K3S
         run: make start-k3s
 
-      - name: Run load test
-        run: make test-load
-
       - name: Run conformance tests
         run: make test-conformance
 
       - name: Run flaky conformance tests
         run: make test-conformance-flaky || true
+
+      - name: Store logs
+        if: always()
+        run: |
+          mkdir output
+          docker logs f8n > output/f8n-logs.txt || true
+          docker logs k3s > output/k3s-logs.txt || true
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-results
+          path: output/

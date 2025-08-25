@@ -1,4 +1,4 @@
-# F8N: K8S on FoundationDB 
+# F8N: Kubernetes on FoundationDB 
 
 F8N is an etcdshim that translated etcd API to FoundationDB.
 
