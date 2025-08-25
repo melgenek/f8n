@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 jobs:
@@ -30,9 +30,9 @@ jobs:
       - name: Store logs
         if: always()
         run: |
-          mkdir output
-          docker logs f8n > output/f8n-logs.txt || true
-          docker logs k3s > output/k3s-logs.txt || true
+          mkdir -p output
+          docker logs f8n &> output/f8n-logs.txt || true
+          docker logs k3s &> output/k3s-logs.txt || true
 
       - name: Upload artifact
         if: always()
