@@ -456,7 +456,7 @@ func TestCompaction(t *testing.T) {
 }
 
 func TestWatchAll(t *testing.T) {
-	logrus.SetLevel(logrus.InfoLevel)
+	logrus.SetLevel(logrus.TraceLevel)
 
 	maxBatchSize = 10
 	recordsCount := 53

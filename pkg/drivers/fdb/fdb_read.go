@@ -327,7 +327,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 	}
 
 	rc := newRecordCollector(f, maxRevision, collector)
-	_, err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, rc)
+	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, rc)
 	if err != nil {
 		return 0, err
 	}

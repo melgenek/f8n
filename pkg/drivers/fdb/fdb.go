@@ -16,6 +16,10 @@ var (
 	_ server.Backend = &FDB{}
 )
 
+func init() {
+	drivers.Register("fdb", New)
+}
+
 func New(_ context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
 	logrus.Info("New FDB backend")
 	return false, NewFdbStructured(cfg.DataSourceName), nil

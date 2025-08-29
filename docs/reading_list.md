@@ -6,7 +6,6 @@
 - https://www.youtube.com/watch?v=2HiIgbxtx0c&ab_channel=TheLinuxFoundation
 - https://etcd.io/docs/v3.6/learning/data_model/
 - https://github.com/apple/foundationdb/wiki/Difference-between-Tuple.range()-and-Range.startsWith()
-- https://forums.foundationdb.org/t/what-is-the-most-efficient-way-to-generate-version-stamps-in-fdb/2062
 - https://forums.foundationdb.org/t/versionstamp-vs-committedversion/600/4
 - https://forums.foundationdb.org/t/versionstamp-performance/705
 - https://forums.foundationdb.org/t/get-current-versionstamp/586/3
@@ -39,4 +38,8 @@
 - https://forums.foundationdb.org/t/foundationdb-read-performance/729/4
 - https://forums.foundationdb.org/t/ranges-without-explicit-end-go/773/13
 - https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/storage/cacher/watch_cache.go#L52
+- https://forums.foundationdb.org/t/fdb-zk-rough-cut-of-zookeeper-api-layer/1278
+- https://activesphere.com/blog/2018/08/17/order-preserving-serialization
+- https://activesphere.com/blog/2018/08/05/high-contention-allocator
+- https://forums.foundationdb.org/t/how-to-minimize-transaction-conflicts-on-atomic-operations/1051/3
 - 

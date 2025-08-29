@@ -45,7 +45,7 @@ func (c *compactProcessor) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb
 		}
 	}
 	c.batchCompacted = *rev
-	return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), true, nil
+	return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, record.Key, math.MaxInt64}), true, nil
 }
 
 func (c *compactProcessor) endBatch(tr *fdb.Transaction, isLast bool) error {
@@ -70,7 +70,7 @@ func (f *FDB) Compact(_ context.Context, endRev int64) (int64, error) {
 	end := fdb.FirstGreaterThan(f.byRevision.GetSubspace().Pack(tuple.Tuple{int64ToVersionstamp(endRev)}))
 
 	processor := newCompactProcessor(f)
-	if _, err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, processor); err != nil {
+	if err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, processor); err != nil {
 		return 0, err
 	}
 	return processor.lastTr.GetCommittedVersion()
