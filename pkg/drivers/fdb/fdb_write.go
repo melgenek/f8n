@@ -72,6 +72,10 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 	// https://apple.github.io/foundationdb/automatic-idempotency.html
 	lastWriteUUID := createUUID()
 	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
+		if err := setFirstInBatch(&tr); err != nil {
+			return nil, err
+		}
+
 		lastRecord, err := f.getLast(&tr, key)
 
 		if err != nil {
@@ -129,6 +133,10 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 
 	lastWriteUUID := createUUID()
 	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
+		if err := setFirstInBatch(&tr); err != nil {
+			return nil, err
+		}
+
 		lastRecord, err := f.getLast(&tr, key)
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
@@ -178,6 +186,10 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 
 func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *server.KeyValue, bool, error) {
 	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
+		if err := setFirstInBatch(&tr); err != nil {
+			return nil, err
+		}
+
 		lastRecord, err := f.getLast(&tr, key)
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
@@ -224,6 +236,13 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 		return 0, nil, false, err
 	}
 	return res.getResult()
+}
+
+func setFirstInBatch(tr *fdb.Transaction) error {
+	// Make sure that there is only one write per commit batch, so that commit version is unique.
+	// https://forums.foundationdb.org/t/possible-to-create-a-unique-increasing-8-byte-sequence-with-versionstamps/1640/8
+	// https://github.com/apple/foundationdb/blob/e872b35cd279df0420fc3fd5e3734e54156a829d/fdbclient/vexillographer/fdb.options#L324-L326
+	return setTransactionOption(tr.Options(), 710, nil)
 }
 
 func (f *FDB) append(tr *fdb.Transaction, record *Record) (fdb.FutureKey, tuple.UUID, error) {

@@ -3,9 +3,11 @@ package fdb
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
+	"math"
 )
 
 func revRecordToEvent(revRecord *RevRecord) *server.Event {
@@ -34,11 +36,15 @@ func versionstampBytesToInt64(bytes []byte) int64 {
 }
 
 func versionstampToInt64(versionstamp tuple.Versionstamp) int64 {
+	idInCommit := binary.BigEndian.Uint16(versionstamp.TransactionVersion[8:])
+	if idInCommit != 0 && idInCommit != math.MaxUint16 {
+		panic(fmt.Sprintf("there was more than one transaction in this commit. Versionstamp: %s", versionstamp.String()))
+	}
 	return versionstampBytesToInt64(versionstamp.TransactionVersion[:])
 }
 
 func int64ToVersionstamp(minRevision int64) tuple.Versionstamp {
-	beginVersionstamp := tuple.IncompleteVersionstamp(0xFFFF)
+	beginVersionstamp := tuple.Versionstamp{}
 	binary.BigEndian.PutUint64(beginVersionstamp.TransactionVersion[:], uint64(minRevision))
 	return beginVersionstamp
 }

@@ -31,26 +31,23 @@ type Processor[T any] interface {
 type batchResult struct {
 	lastReadKey        fdb.Key
 	collectorNeedsMore bool
-	streamHasMore      bool
 }
 
-func processRange(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) (batchResult, error) {
+func processRange(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) error {
 	beginSelector := selector.Begin
 
-	var lastBatchResult batchResult
 	for i := 0; ; i++ {
 		res, err := processBatch(db, fdb.SelectorRange{Begin: beginSelector, End: selector.End}, collector)
 		if err != nil {
-			return lastBatchResult, err
+			return err
 		}
-		lastBatchResult = res
-		if !res.collectorNeedsMore || !res.streamHasMore {
+		if !res.collectorNeedsMore {
 			break
 		}
 		beginSelector = fdb.FirstGreaterThan(res.lastReadKey)
 	}
 
-	return lastBatchResult, nil
+	return nil
 }
 
 func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) (batchResult, error) {
@@ -84,8 +81,7 @@ func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 					firstKey = lastKey
 				}
 				res.lastReadKey = lastKey
-				res.collectorNeedsMore = collectorNeedsMore
-				res.streamHasMore = lastKey != nil
+				res.collectorNeedsMore = collectorNeedsMore && lastKey != nil
 			}
 			dur := time.Since(start)
 			if dur > splitRangeAfterDuration {
@@ -94,7 +90,7 @@ func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 			}
 		}
 
-		if err := collector.endBatch(&tr, !res.collectorNeedsMore || !res.streamHasMore); err != nil {
+		if err := collector.endBatch(&tr, !res.collectorNeedsMore); err != nil {
 			return res, err
 		}
 

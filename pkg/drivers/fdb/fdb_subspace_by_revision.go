@@ -151,10 +151,10 @@ func (s *ByRevisionSubspace) writeBlob(tr *fdb.Transaction, rev tuple.Versionsta
 			end = len(value)
 		}
 
-		if key, err := s.subspace.PackWithVersionstamp(tuple.Tuple{rev, offset}); err != nil {
+		if chunkKey, err := s.subspace.PackWithVersionstamp(tuple.Tuple{rev, offset}); err != nil {
 			return err
 		} else {
-			tr.SetVersionstampedKey(key, value[offset:end])
+			tr.SetVersionstampedKey(chunkKey, value[offset:end])
 		}
 	}
 	return nil
