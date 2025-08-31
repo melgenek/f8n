@@ -23,10 +23,10 @@ type AfterResult struct {
 }
 
 func (a *AfterResult) String() string {
-	return fmt.Sprintf("rev=%d, events=%d", a.currentRevision, len(a.events))
+	return fmt.Sprintf("latestRev=%d, records=%d", a.currentRevision, len(a.events))
 }
 
-func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.WatchResult {
+func (f *FDB) Watch(ctx context.Context, prefix string, minRevision int64) server.WatchResult {
 	// ETCD robustness tests pass null prefix
 	if prefix == "\u0000" {
 		prefix = "/"
@@ -35,9 +35,9 @@ func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.W
 	ctx, cancel := context.WithCancel(ctx)
 	readChan := f.innerWatch(ctx, prefix)
 
-	// include the current revision in listKeyValue
-	if revision > 0 {
-		revision--
+	// include the current minRevision in listKeyValue
+	if minRevision > 0 {
+		minRevision--
 	}
 
 	result := make(chan []*server.Event, 100)
@@ -45,12 +45,12 @@ func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.W
 	wr := server.WatchResult{Events: result, Errorc: errc}
 
 	// initial read
-	afterResult, err := f.after(revision, true, 0, func(key string) bool {
+	afterResult, err := f.afterAll(minRevision, func(key string) bool {
 		return doesEventHavePrefix(key, prefix)
 	})
-	logrus.Tracef("INITIAL POLL key=%s rev=%d => res=%v err=%v", prefix, revision, 0, err)
+	logrus.Tracef("INITIAL POLL key=%s latestRev=%d => latestRev=%d res=%v err=%v", prefix, minRevision, afterResult.currentRevision, len(afterResult.events), err)
 	if err != nil {
-		logrus.Errorf("Failed to 'after' %s for revision %d: %v", prefix, revision, err)
+		logrus.Errorf("Failed to 'afterAll' %s for minRevision %d: %v", prefix, minRevision, err)
 		if errors.Is(err, server.ErrCompacted) {
 			wr.CompactRevision = afterResult.compactRevision
 			wr.CurrentRevision = afterResult.currentRevision
@@ -62,9 +62,13 @@ func (f *FDB) Watch(ctx context.Context, prefix string, revision int64) server.W
 	}
 
 	go func() {
-		lastRevision := afterResult.currentRevision
+		lastRevision := minRevision
 		if len(afterResult.events) > 0 {
+			for _, event := range afterResult.events {
+				logrus.Tracef("INITIAL POLL EVENT key=%s latestRev=%d", event.KV.Key, event.KV.ModRevision)
+			}
 			result <- afterResult.events
+			lastRevision = afterResult.events[len(afterResult.events)-1].KV.ModRevision
 		}
 
 		for events := range readChan {
@@ -125,7 +129,7 @@ func (f *FDB) startWatch() (chan interface{}, error) {
 }
 
 func (f *FDB) poll(result chan interface{}, pollStart int64) {
-	currentRev := pollStart
+	f.currentRev = pollStart
 
 	defer close(result)
 
@@ -143,19 +147,19 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 			continue
 		}
 
-		var afterResult AfterResult
-		for afterResult, err = f.after(currentRev, false, maxBatchSize, func(s string) bool { return true }); err != nil; {
+		var events []*server.Event
+		logrus.Tracef("POLLING latestRev=%d", f.currentRev)
+		for events, err = f.afterBatch(f.currentRev, func(s string) bool { return true }); err != nil; {
 			logrus.Errorf("Error in 'afterBatch' err=%v", err)
 		}
-		logrus.Tracef("AFTER POLL rev=%d => res=%v err=%v", currentRev, len(afterResult.events), err)
-
-		if len(afterResult.events) > 0 {
-			currentRev = afterResult.events[len(afterResult.events)-1].KV.ModRevision
-		} else {
-			currentRev = afterResult.currentRevision
+		logrus.Tracef("AFTER POLL latestRev=%d => res=%v err=%v", f.currentRev, len(events), err)
+		for _, event := range events {
+			logrus.Tracef("AFTER POLL EVENT key=%s create=%v delete=%v latestRev=%d", event.KV.Key, event.Create, event.Delete, event.KV.ModRevision)
 		}
-		if len(afterResult.events) > 0 {
-			result <- afterResult.events
+
+		if len(events) > 0 {
+			result <- events
+			f.currentRev = events[len(events)-1].KV.ModRevision
 			watchFuture.(fdb.FutureNil).Cancel()
 		} else if err := watchFuture.(fdb.FutureNil).Get(); err != nil {
 			logrus.Errorf("Error waiting for a watch err=%v", err)
@@ -175,8 +179,8 @@ type afterCollector struct {
 	events          []*server.Event
 	compactRevision int64
 	batchCompactRev int64
-	rev             int64
-	batchRev        int64
+	latestRev       int64
+	batchLatestRev  int64
 }
 
 func newAfterCollector(f *FDB, minRevision int64, checkCompacted bool, limit int, takeKey func(string) bool) *afterCollector {
@@ -197,7 +201,7 @@ func newAfterCollector(f *FDB, minRevision int64, checkCompacted bool, limit int
 
 func (c *afterCollector) startBatch() {
 	c.batchEvents = c.batchEvents[len(c.batchEvents):]
-	c.batchRev = 0
+	c.batchLatestRev = 0
 	c.batchCompactRev = 0
 }
 
@@ -210,7 +214,7 @@ func (c *afterCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.K
 		return nil, false, nil
 	}
 
-	if c.rev != 0 && versionstampToInt64(*rev) > c.rev {
+	if c.latestRev != 0 && VersionstampToInt64(*rev) > c.latestRev {
 		return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), false, nil
 	}
 
@@ -241,12 +245,14 @@ func (c *afterCollector) needMore() bool {
 }
 
 func (c *afterCollector) endBatch(tr *fdb.Transaction, _ bool) error {
-	if c.rev == 0 {
-		rev, err := tr.GetReadVersion().Get()
-		if err != nil {
+	if c.latestRev == 0 {
+		if latestRevF, err := c.f.rev.GetLatestRev(tr); err != nil {
 			return err
+		} else if latestRev, err := latestRevF.Get(); err != nil {
+			return err
+		} else {
+			c.batchLatestRev = latestRev
 		}
-		c.batchRev = rev
 	}
 
 	if c.checkCompacted {
@@ -254,8 +260,8 @@ func (c *afterCollector) endBatch(tr *fdb.Transaction, _ bool) error {
 		if err != nil {
 			return err
 		}
-		if c.minRevision > 0 && c.minRevision < versionstampToInt64(compactRev) {
-			c.batchCompactRev = versionstampToInt64(compactRev)
+		if c.minRevision > 0 && c.minRevision < VersionstampToInt64(compactRev) {
+			c.batchCompactRev = VersionstampToInt64(compactRev)
 			return server.ErrCompacted
 		}
 	}
@@ -264,20 +270,32 @@ func (c *afterCollector) endBatch(tr *fdb.Transaction, _ bool) error {
 
 func (c *afterCollector) postBatch() {
 	c.events = append(c.events, c.batchEvents...)
-	c.rev = c.batchRev
+	c.latestRev = c.batchLatestRev
 	c.compactRevision = c.batchCompactRev
 }
 
-func (f *FDB) after(minRevision int64, checkCompacted bool, limit int, takeKey func(string) bool) (AfterResult, error) {
+func (f *FDB) afterAll(minRevision int64, takeKey func(string) bool) (AfterResult, error) {
 	selector := f.afterRevisionSelector(minRevision)
 
-	collector := newAfterCollector(f, minRevision, checkCompacted, limit, takeKey)
+	collector := newAfterCollector(f, minRevision, true, 0, takeKey)
 	err := processRange(f.db, selector, collector)
+	currentRevision := collector.latestRev
+	if len(collector.events) > 0 {
+		currentRevision = collector.events[len(collector.events)-1].KV.ModRevision
+	}
 	return AfterResult{
-		currentRevision: collector.rev,
+		currentRevision: currentRevision,
 		compactRevision: collector.compactRevision,
 		events:          collector.events,
 	}, err
+}
+
+func (f *FDB) afterBatch(minRevision int64, takeKey func(string) bool) ([]*server.Event, error) {
+	selector := f.afterRevisionSelector(minRevision)
+
+	collector := newAfterCollector(f, minRevision, false, maxBatchSize, takeKey)
+	_, err := processBatch(f.db, selector, collector)
+	return collector.events, err
 }
 
 func (f *FDB) afterRevisionSelector(minRevision int64) fdb.SelectorRange {

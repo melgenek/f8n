@@ -65,7 +65,7 @@ func (f *FDB) ttl(ctx context.Context) {
 func (f *FDB) handleTTLEvents(ctx context.Context, rwMutex *sync.RWMutex, queue workqueue.DelayingInterface, store map[string]*ttlEventKV) bool {
 	key, shutdown := queue.Get()
 	if shutdown {
-		logrus.Info("TTL events work queue has shut down")
+		logrus.Info("TTL records work queue has shut down")
 		return false
 	}
 	defer queue.Done(key)
@@ -122,7 +122,7 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 		revRecords := collector.records
 		for len(revRecords) > 0 {
 			if err != nil {
-				logrus.Errorf("TTL events listKeyValue failed: %v", err)
+				logrus.Errorf("TTL records listKeyValue failed: %v", err)
 				return
 			}
 
@@ -148,7 +148,7 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 				}
 			}
 		}
-		logrus.Info("TTL events watch channel closed")
+		logrus.Info("TTL records watch channel closed")
 	}()
 
 	return result

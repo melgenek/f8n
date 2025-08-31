@@ -40,7 +40,7 @@ func (b *FdbLogger) Get(ctx context.Context, key, rangeEnd string, limit, revisi
 		if kvRet != nil {
 			size = len(kvRet.Value)
 		}
-		fStr := "GET %s, rangeEnd=%s rev=%d => revRet=%d, kv=%v, size=%d, err=%v, duration=%s"
+		fStr := "GET %s, rangeEnd=%s latestRev=%d => revRet=%d, kv=%v, size=%d, err=%v, duration=%s"
 		b.logMethod(dur, fStr, key, rangeEnd, revision, revRet, kvRet != nil, size, errRet, dur)
 	}()
 
@@ -51,7 +51,7 @@ func (b *FdbLogger) Create(ctx context.Context, key string, value []byte, lease 
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "CREATE %s, size=%d, lease=%d => rev=%d, err=%v, duration=%s"
+		fStr := "CREATE %s, size=%d, lease=%d => latestRev=%d, err=%v, duration=%s"
 		b.logMethod(dur, fStr, key, len(value), lease, revRet, errRet, dur)
 	}()
 
@@ -62,7 +62,7 @@ func (b *FdbLogger) Update(ctx context.Context, key string, value []byte, revisi
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "UPDATE %s, value=%d, rev=%d, lease=%v => rev=%d, updated=%v, err=%v, duration=%s"
+		fStr := "UPDATE %s, value=%d, latestRev=%d, lease=%v => latestRev=%d, updated=%v, err=%v, duration=%s"
 		b.logMethod(dur, fStr, key, len(value), revision, lease, revRet, updateRet, errRet, dur)
 	}()
 
@@ -73,7 +73,7 @@ func (b *FdbLogger) Delete(ctx context.Context, key string, revision int64) (rev
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "DELETE %s, rev=%d => rev=%d, kv=%v, deleted=%v, err=%v, duration=%s"
+		fStr := "DELETE %s, latestRev=%d => latestRev=%d, kv=%v, deleted=%v, err=%v, duration=%s"
 		b.logMethod(dur, fStr, key, revision, revRet, kvRet != nil, deletedRet, errRet, dur)
 	}()
 
@@ -84,7 +84,7 @@ func (b *FdbLogger) List(ctx context.Context, prefix, startKey string, limit, re
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "LIST %s, start=%s, limit=%d, rev=%d => rev=%d, kvs=%d, err=%v, duration=%s"
+		fStr := "LIST %s, start=%s, limit=%d, latestRev=%d => latestRev=%d, kvs=%d, err=%v, duration=%s"
 		b.logMethod(dur, fStr, prefix, startKey, limit, revision, revRet, len(kvRet), errRet, dur)
 	}()
 
@@ -95,7 +95,7 @@ func (b *FdbLogger) Count(ctx context.Context, prefix, startKey string, revision
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "COUNT %s, start=%s, rev=%d => rev=%d, count=%d, err=%v, duration=%s"
+		fStr := "COUNT %s, start=%s, latestRev=%d => latestRev=%d, count=%d, err=%v, duration=%s"
 		b.logMethod(dur, fStr, prefix, startKey, revision, revRet, count, err, dur)
 	}()
 
@@ -106,7 +106,7 @@ func (b *FdbLogger) Watch(ctx context.Context, prefix string, revision int64) (r
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "WATCH prefix=%s rev=%s => rev=%d, compactRev=%v, duration=%s"
+		fStr := "WATCH prefix=%s latestRev=%s => latestRev=%d, compactRev=%v, duration=%s"
 		b.logMethod(dur, fStr, prefix, revision, res.CurrentRevision, res.CompactRevision, dur)
 	}()
 	return b.backend.Watch(ctx, prefix, revision)
@@ -130,7 +130,7 @@ func (b *FdbLogger) Compact(ctx context.Context, revision int64) (revRet int64, 
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "COMPACT rev=%d => rev=%d, err=%v, duration=%s"
+		fStr := "COMPACT latestRev=%d => latestRev=%d, err=%v, duration=%s"
 		b.logMethod(dur, fStr, revision, revRet, errRet, dur)
 	}()
 	return b.backend.Compact(ctx, revision)

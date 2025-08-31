@@ -56,10 +56,11 @@ func (s *ByRevisionSubspace) Write(tr *fdb.Transaction, rev tuple.Versionstamp, 
 		return err
 	}
 
-	if revisionKey, err := s.subspace.PackWithVersionstamp(tuple.Tuple{rev}); err != nil {
+	packKey, setValue := GetWriteOps(tr, s.subspace)
+	if revisionKey, err := packKey(tuple.Tuple{rev}); err != nil {
 		return err
 	} else {
-		tr.SetVersionstampedKey(revisionKey, recordToTuple(record).Pack())
+		setValue(revisionKey, s.recordToTuple(record).Pack())
 	}
 
 	return nil
@@ -78,7 +79,7 @@ func (s *ByRevisionSubspace) ParseKV(kv fdb.KeyValue) (tuple.Versionstamp, *Reco
 	if err != nil {
 		return dummyVersionstamp, nil, fmt.Errorf("failed to unpack value '%v': %w", kv.Value, err)
 	}
-	record := tupleToRecord(unpackedTuple)
+	record := s.tupleToRecord(unpackedTuple)
 	return versionstamp, record, nil
 }
 
@@ -151,16 +152,17 @@ func (s *ByRevisionSubspace) writeBlob(tr *fdb.Transaction, rev tuple.Versionsta
 			end = len(value)
 		}
 
-		if chunkKey, err := s.subspace.PackWithVersionstamp(tuple.Tuple{rev, offset}); err != nil {
+		packKey, setValue := GetWriteOps(tr, s.subspace)
+		if chunkKey, err := packKey(tuple.Tuple{rev, offset}); err != nil {
 			return err
 		} else {
-			tr.SetVersionstampedKey(chunkKey, value[offset:end])
+			setValue(chunkKey, value[offset:end])
 		}
 	}
 	return nil
 }
 
-func recordToTuple(record *Record) tuple.Tuple {
+func (s *ByRevisionSubspace) recordToTuple(record *Record) tuple.Tuple {
 	return tuple.Tuple{
 		record.Key,
 		record.IsDelete,
@@ -172,7 +174,7 @@ func recordToTuple(record *Record) tuple.Tuple {
 	}
 }
 
-func tupleToRecord(t tuple.Tuple) *Record {
+func (s *ByRevisionSubspace) tupleToRecord(t tuple.Tuple) *Record {
 	return &Record{
 		Key:            t[0].(string),
 		IsDelete:       t[1].(bool),

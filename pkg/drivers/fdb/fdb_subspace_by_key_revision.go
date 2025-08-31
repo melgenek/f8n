@@ -47,11 +47,12 @@ func (s *ByKeyAndRevisionSubspace) GetSubspace() subspace.Subspace {
 }
 
 func (s *ByKeyAndRevisionSubspace) Write(tr *fdb.Transaction, key *KeyAndRevision, value *ByKeyAndRevisionValue) error {
-	if revisionKey, err := s.subspace.PackWithVersionstamp(tuple.Tuple{key.Key, key.Rev}); err != nil {
+	packKey, setValue := GetWriteOps(tr, s.subspace)
+	if revisionKey, err := packKey(tuple.Tuple{key.Key, key.Rev}); err != nil {
 		return err
 	} else {
 		t := tuple.Tuple{value.IsCreate, value.IsDelete, value.CreateRevision, value.WriteUUID}
-		tr.SetVersionstampedKey(revisionKey, t.Pack())
+		setValue(revisionKey, t.Pack())
 		return nil
 	}
 }
