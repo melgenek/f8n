@@ -17,6 +17,7 @@ package validate
 import (
 	"errors"
 	"fmt"
+	forkedModel "github.com/melgenek/f8n/pkg/app/model"
 	"go.etcd.io/etcd/tests/v3/robustness/validate"
 	"math"
 	"time"
@@ -54,7 +55,7 @@ func ValidateAndReturnVisualize(lg *zap.Logger, cfg Config, reports []report.Cli
 		lg.Info("Skipping other validations as persisted requests were empty")
 		return result
 	}
-	replay := model.NewReplay(persistedRequests)
+	replay := forkedModel.NewReplay(persistedRequests)
 	result.Watch = validateWatch(lg, cfg, reports, replay)
 	result.Serializable = validateSerializableOperations(lg, serializableOperations, replay)
 	return result
@@ -113,12 +114,12 @@ func isSerializable(request model.EtcdRequest, response model.MaybeEtcdResponse)
 }
 
 func checkValidationAssumptions(reports []report.ClientReport) error {
-	//err := validateEmptyDatabaseAtStart(reports)
-	//if err != nil {
-	//	return err
-	//}
+	err := validateEmptyDatabaseAtStart(reports)
+	if err != nil {
+		return err
+	}
 
-	err := validateNonConcurrentClientRequests(reports)
+	err = validateNonConcurrentClientRequests(reports)
 	if err != nil {
 		return err
 	}

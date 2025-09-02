@@ -28,7 +28,7 @@ func TestFDB(t *testing.T) {
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	err := f.Start(ctx)
 	require.NoError(t, err)
-	//createRecords(t, f, ctx, 500, maxRecordSize) // fill up fdb
+	createRecords(t, f, ctx, 500, maxRecordSize) // fill up fdb
 	cancelCtx()
 
 	f = NewFdbStructured("docker:docker@127.0.0.1:4500", "dir2")

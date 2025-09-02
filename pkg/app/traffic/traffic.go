@@ -41,10 +41,9 @@ func SimulateTraffic(ctx context.Context, t *testing.T, lg *zap.Logger, clus *e2
 	// Use the highest MaximalQPS of all traffic profiles as burst otherwise actual traffic may be accidentally limited
 	limiter := rate.NewLimiter(rate.Limit(profile.MaximalQPS), profile.BurstableQPS)
 
-	//r, err := traffic.CheckEmptyDatabaseAtStart(ctx, lg, endpoints, ids, baseTime)
-	//require.NoError(t, err)
-	//reports := []report.ClientReport{r}
-	reports := []report.ClientReport{}
+	r, err := traffic.CheckEmptyDatabaseAtStart(ctx, lg, endpoints, ids, baseTime)
+	require.NoError(t, err)
+	reports := []report.ClientReport{r}
 
 	wg := sync.WaitGroup{}
 	nonUniqueWriteLimiter := traffic.NewConcurrencyLimiter(profile.MaxNonUniqueRequestConcurrency)
@@ -109,6 +108,7 @@ func SimulateTraffic(ctx context.Context, t *testing.T, lg *zap.Logger, clus *e2
 	defer cc.Close()
 
 	kc := kubernetes.Client{Client: &clientv3.Client{KV: cc}}
+	// Kine does not support a regular Put
 	//_, err = cc.Put(ctx, "tombstone", "true")
 	_, err = kc.OptimisticPut(ctx, "/tombstone", []byte("true"), 0, kubernetes.PutOptions{})
 	require.NoErrorf(t, err, "First operation failed, validation requires first operation to succeed")

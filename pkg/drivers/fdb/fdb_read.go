@@ -7,6 +7,7 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
+	"math"
 	"strings"
 )
 
@@ -16,8 +17,16 @@ type RevResult struct {
 }
 
 func (f *FDB) CurrentRevision(_ context.Context) (int64, error) {
-	if f.currentRev != 0 {
-		return f.currentRev, nil
+	lastWatchRev := int64(math.MaxInt64)
+	f.lastWatchRevByWatch.Range(func(key, value any) bool {
+		if v, ok := value.(int64); ok && v < lastWatchRev {
+			lastWatchRev = v
+		}
+		return true
+	})
+
+	if lastWatchRev != math.MaxInt64 {
+		return lastWatchRev, nil
 	} else {
 		key, err := transact(f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
 			if latestRev, err := f.rev.GetLatestRev(&tr); err != nil {

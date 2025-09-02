@@ -16,6 +16,7 @@ package validate
 
 import (
 	"errors"
+	forkedModel "github.com/melgenek/f8n/pkg/app/model"
 	"go.etcd.io/etcd/tests/v3/robustness/validate"
 	"time"
 
@@ -39,7 +40,7 @@ var (
 	errBrokeFilter       = errors.New("event not matching watch filter")
 )
 
-func validateWatch(lg *zap.Logger, cfg Config, reports []report.ClientReport, replay *model.EtcdReplay) validate.Result {
+func validateWatch(lg *zap.Logger, cfg Config, reports []report.ClientReport, replay *forkedModel.EtcdReplay) validate.Result {
 	lg.Info("Validating watch")
 	start := time.Now()
 	err := validateWatchError(lg, cfg, reports, replay)
@@ -50,7 +51,7 @@ func validateWatch(lg *zap.Logger, cfg Config, reports []report.ClientReport, re
 	return validate.ResultFromError(err)
 }
 
-func validateWatchError(lg *zap.Logger, cfg Config, reports []report.ClientReport, replay *model.EtcdReplay) error {
+func validateWatchError(lg *zap.Logger, cfg Config, reports []report.ClientReport, replay *forkedModel.EtcdReplay) error {
 	// Validate etcd watch properties defined in https://etcd.io/docs/v3.6/learning/api_guarantees/#watch-apis
 	for _, r := range reports {
 		err := validateFilter(lg, r)
@@ -192,7 +193,7 @@ func validateAtomic(lg *zap.Logger, report report.ClientReport) (err error) {
 	return err
 }
 
-func validateReliable(lg *zap.Logger, replay *model.EtcdReplay, report report.ClientReport) (err error) {
+func validateReliable(lg *zap.Logger, replay *forkedModel.EtcdReplay, report report.ClientReport) (err error) {
 	for _, watch := range report.Watch {
 		firstRev := firstExpectedRevision(watch)
 		lastRev := lastRevision(watch)
@@ -225,7 +226,7 @@ func validateReliable(lg *zap.Logger, replay *model.EtcdReplay, report report.Cl
 	return err
 }
 
-func validateResumable(lg *zap.Logger, replay *model.EtcdReplay, report report.ClientReport) (err error) {
+func validateResumable(lg *zap.Logger, replay *forkedModel.EtcdReplay, report report.ClientReport) (err error) {
 	for _, watch := range report.Watch {
 		if watch.Request.Revision == 0 {
 			continue
@@ -250,7 +251,7 @@ func validateResumable(lg *zap.Logger, replay *model.EtcdReplay, report report.C
 
 // validatePrevKV ensures that a watch response (if configured with WithPrevKV()) returns
 // the appropriate response.
-func validatePrevKV(lg *zap.Logger, replay *model.EtcdReplay, report report.ClientReport) (err error) {
+func validatePrevKV(lg *zap.Logger, replay *forkedModel.EtcdReplay, report report.ClientReport) (err error) {
 	for _, op := range report.Watch {
 		if !op.Request.WithPrevKV {
 			continue
@@ -292,7 +293,7 @@ func validatePrevKV(lg *zap.Logger, replay *model.EtcdReplay, report report.Clie
 	return err
 }
 
-func validateIsCreate(lg *zap.Logger, replay *model.EtcdReplay, report report.ClientReport) (err error) {
+func validateIsCreate(lg *zap.Logger, replay *forkedModel.EtcdReplay, report report.ClientReport) (err error) {
 	for _, op := range report.Watch {
 		for _, resp := range op.Responses {
 			for _, event := range resp.Events {

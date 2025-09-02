@@ -61,28 +61,41 @@ func (f *FDB) Watch(ctx context.Context, prefix string, minRevision int64) serve
 		return wr
 	}
 
+	lastRevision := minRevision
+	if len(afterResult.events) > 0 {
+		lastRevision = afterResult.events[len(afterResult.events)-1].KV.ModRevision
+	}
+
+	currentWatchId := f.watchId.Add(1)
+	f.lastWatchRevByWatch.Store(currentWatchId, lastRevision)
 	go func() {
-		lastRevision := minRevision
 		if len(afterResult.events) > 0 {
 			for _, event := range afterResult.events {
 				logrus.Tracef("INITIAL POLL EVENT key=%s latestRev=%d", event.KV.Key, event.KV.ModRevision)
 			}
 			result <- afterResult.events
-			lastRevision = afterResult.events[len(afterResult.events)-1].KV.ModRevision
 		}
 
-		for events := range readChan {
-			//skip events that have already been sent in the initial batch
-			for len(events) > 0 && events[0].KV.ModRevision <= lastRevision {
-				events = events[1:]
-			}
-
-			if len(events) > 0 {
-				result <- events
+		readMore := true
+		for readMore {
+			select {
+			case events := <-readChan:
+				//skip events that have already been sent in the initial batch
+				for len(events) > 0 && events[0].KV.ModRevision <= lastRevision {
+					events = events[1:]
+				}
+				if len(events) > 0 {
+					result <- events
+					f.lastWatchRevByWatch.Store(currentWatchId, lastRevision)
+				}
+			case <-ctx.Done():
+				readMore = false
 			}
 		}
+
 		close(result)
 		cancel()
+		f.lastWatchRevByWatch.Delete(currentWatchId)
 	}()
 
 	return wr
@@ -129,7 +142,7 @@ func (f *FDB) startWatch() (chan interface{}, error) {
 }
 
 func (f *FDB) poll(result chan interface{}, pollStart int64) {
-	f.currentRev = pollStart
+	currentRev := pollStart
 
 	defer close(result)
 
@@ -148,18 +161,18 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 		}
 
 		var events []*server.Event
-		logrus.Tracef("POLLING latestRev=%d", f.currentRev)
-		for events, err = f.afterBatch(f.currentRev, func(s string) bool { return true }); err != nil; {
+		logrus.Tracef("POLLING latestRev=%d", currentRev)
+		for events, err = f.afterBatch(currentRev, func(s string) bool { return true }); err != nil; {
 			logrus.Errorf("Error in 'afterBatch' err=%v", err)
 		}
-		logrus.Tracef("AFTER POLL latestRev=%d => res=%v err=%v", f.currentRev, len(events), err)
+		logrus.Tracef("AFTER POLL latestRev=%d => res=%v err=%v", currentRev, len(events), err)
 		for _, event := range events {
 			logrus.Tracef("AFTER POLL EVENT key=%s create=%v delete=%v latestRev=%d", event.KV.Key, event.Create, event.Delete, event.KV.ModRevision)
 		}
 
 		if len(events) > 0 {
 			result <- events
-			f.currentRev = events[len(events)-1].KV.ModRevision
+			currentRev = events[len(events)-1].KV.ModRevision
 			watchFuture.(fdb.FutureNil).Cancel()
 		} else if err := watchFuture.(fdb.FutureNil).Get(); err != nil {
 			logrus.Errorf("Error waiting for a watch err=%v", err)

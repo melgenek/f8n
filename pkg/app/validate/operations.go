@@ -60,7 +60,7 @@ func validateLinearizableOperationsAndVisualize(lg *zap.Logger, operations []por
 	return result
 }
 
-func validateSerializableOperations(lg *zap.Logger, operations []porcupine.Operation, replay *model.EtcdReplay) validate.Result {
+func validateSerializableOperations(lg *zap.Logger, operations []porcupine.Operation, replay *forkedModel.EtcdReplay) validate.Result {
 	lg.Info("Validating serializable operations")
 	start := time.Now()
 	err := validateSerializableOperationsError(lg, operations, replay)
@@ -71,7 +71,7 @@ func validateSerializableOperations(lg *zap.Logger, operations []porcupine.Opera
 	return validate.ResultFromError(err)
 }
 
-func validateSerializableOperationsError(lg *zap.Logger, operations []porcupine.Operation, replay *model.EtcdReplay) (lastErr error) {
+func validateSerializableOperationsError(lg *zap.Logger, operations []porcupine.Operation, replay *forkedModel.EtcdReplay) (lastErr error) {
 	for _, read := range operations {
 		request := read.Input.(model.EtcdRequest)
 		response := read.Output.(model.MaybeEtcdResponse)
@@ -83,7 +83,7 @@ func validateSerializableOperationsError(lg *zap.Logger, operations []porcupine.
 	return lastErr
 }
 
-func validateSerializableRead(lg *zap.Logger, replay *model.EtcdReplay, request model.EtcdRequest, response model.MaybeEtcdResponse) error {
+func validateSerializableRead(lg *zap.Logger, replay *forkedModel.EtcdReplay, request model.EtcdRequest, response model.MaybeEtcdResponse) error {
 	if response.Persisted || response.Error != "" {
 		return nil
 	}
@@ -104,7 +104,7 @@ func validateSerializableRead(lg *zap.Logger, replay *model.EtcdReplay, request 
 		kvs = append(kvs, kv)
 	}
 	expectResp.Range.KVs = kvs
-	
+
 	if diff := cmp.Diff(response.EtcdResponse.Range, expectResp.Range); diff != "" {
 		lg.Error("Failed validating serializable operation", zap.Any("request", request), zap.String("diff", diff))
 		return errRespNotMatched

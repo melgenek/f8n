@@ -9,6 +9,8 @@ import (
 	"github.com/k3s-io/kine/pkg/drivers"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,8 +45,8 @@ type FDB struct {
 	broadcaster broadcaster.Broadcaster
 	ctx         context.Context
 
-	// currentRev contains the revision, before which all the events have been watched
-	currentRev int64
+	lastWatchRevByWatch sync.Map
+	watchId             atomic.Uint64
 }
 
 func NewFdbStructured(connectionString string, dirName string) server.Backend {
