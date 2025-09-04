@@ -46,7 +46,7 @@ type FDB struct {
 	ctx         context.Context
 
 	lastWatchRevByWatch sync.Map
-	watchId             atomic.Uint64
+	lastWatchRev        atomic.Int64
 }
 
 func NewFdbStructured(connectionString string, dirName string) server.Backend {
@@ -61,8 +61,8 @@ func NewFdbStructured(connectionString string, dirName string) server.Backend {
 }
 
 func (f *FDB) Start(ctx context.Context) error {
-	f.ctx = ctx
 	fdb.MustAPIVersion(730)
+	f.ctx = ctx
 
 	db, err := fdb.OpenWithConnectionString(f.connectionString)
 	if err != nil {

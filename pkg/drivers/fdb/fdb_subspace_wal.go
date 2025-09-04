@@ -9,6 +9,16 @@ import (
 	"math"
 )
 
+type WalRecord struct {
+	Rev              tuple.Versionstamp
+	Key              string
+	ExpectedRevision int64
+	IsDelete         bool
+	IsCreate         bool
+	PrevRevision     tuple.Versionstamp
+	Value            []byte
+}
+
 var CorrectnessTesting = false
 
 type WalSubspace struct {
@@ -29,12 +39,11 @@ func (s *WalSubspace) GetSubspace() subspace.Subspace {
 	return s.subspace
 }
 
-func (s *WalSubspace) Write(tr *fdb.Transaction, rev tuple.Versionstamp, record *Record) error {
+func (s *WalSubspace) Write(tr *fdb.Transaction, rev tuple.Versionstamp, record *WalRecord) error {
 	if !CorrectnessTesting {
 		return nil
 	}
 
-	record.ValueSize = int64(len(record.Value))
 	packKey, setValue := GetWriteOps(tr, s.subspace)
 	if revisionKey, err := packKey(tuple.Tuple{rev}); err != nil {
 		return err
@@ -45,10 +54,10 @@ func (s *WalSubspace) Write(tr *fdb.Transaction, rev tuple.Versionstamp, record 
 	return nil
 }
 
-func (s *WalSubspace) parseKV(kv fdb.KeyValue) (tuple.Versionstamp, *Record, error) {
+func (s *WalSubspace) parseKV(kv fdb.KeyValue) (*WalRecord, error) {
 	k, err := s.subspace.Unpack(kv.Key)
 	if err != nil {
-		return dummyVersionstamp, nil, fmt.Errorf("failed to unpack key %v: %w", kv.Key, err)
+		return nil, fmt.Errorf("failed to unpack key %v: %w", kv.Key, err)
 	}
 	versionstamp := k[0].(tuple.Versionstamp)
 	if len(k) != 1 {
@@ -56,10 +65,11 @@ func (s *WalSubspace) parseKV(kv fdb.KeyValue) (tuple.Versionstamp, *Record, err
 	}
 	unpackedTuple, err := tuple.Unpack(kv.Value)
 	if err != nil {
-		return dummyVersionstamp, nil, fmt.Errorf("failed to unpack value '%v': %w", kv.Value, err)
+		return nil, fmt.Errorf("failed to unpack value '%v': %w", kv.Value, err)
 	}
 	record := s.tupleToRecord(unpackedTuple)
-	return versionstamp, record, nil
+	record.Rev = versionstamp
+	return record, nil
 }
 
 func (s *WalSubspace) GetIterator(tr *fdb.Transaction, rev tuple.Versionstamp) (*fdb.RangeIterator, error) {
@@ -71,43 +81,47 @@ func (s *WalSubspace) GetIterator(tr *fdb.Transaction, rev tuple.Versionstamp) (
 	return it, nil
 }
 
-func (s *WalSubspace) GetFromIterator(it *fdb.RangeIterator) (*tuple.Versionstamp, *Record, error) {
+func (s *WalSubspace) GetFromIterator(it *fdb.RangeIterator) (*WalRecord, error) {
 	if !it.Advance() {
-		return nil, nil, nil
+		return nil, nil
 	}
 	kv, err := it.Get()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	rev, record, err := s.parseKV(kv)
+	record, err := s.parseKV(kv)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return &rev, record, nil
+	return record, nil
 }
 
-func (s *WalSubspace) recordToTuple(record *Record) tuple.Tuple {
+func (s *WalSubspace) recordToTuple(record *WalRecord) tuple.Tuple {
 	return tuple.Tuple{
 		record.Key,
+		record.ExpectedRevision,
 		record.IsDelete,
 		record.IsCreate,
+		record.PrevRevision,
 		record.Value,
 	}
 }
 
-func (s *WalSubspace) tupleToRecord(t tuple.Tuple) *Record {
-	return &Record{
-		Key:      t[0].(string),
-		IsDelete: t[1].(bool),
-		IsCreate: t[2].(bool),
-		Value:    t[3].([]byte),
+func (s *WalSubspace) tupleToRecord(t tuple.Tuple) *WalRecord {
+	return &WalRecord{
+		Key:              t[0].(string),
+		ExpectedRevision: t[1].(int64),
+		IsDelete:         t[2].(bool),
+		IsCreate:         t[3].(bool),
+		PrevRevision:     t[4].(tuple.Versionstamp),
+		Value:            t[5].([]byte),
 	}
 }
 
-func (f *FDB) ReadWAL() ([]RevRecord, error) {
+func (f *FDB) ReadWAL() ([]*WalRecord, error) {
 	collector := newWalCollector(f)
-	//begin, end := f.wal.GetSubspace().FDBRangeKeySelectors()
-	begin, end := f.byRevision.GetSubspace().FDBRangeKeySelectors()
+	begin, end := f.wal.GetSubspace().FDBRangeKeySelectors()
+	//begin, end := f.byRevision.GetSubspace().FDBRangeKeySelectors()
 	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, collector)
 	return collector.records, err
 }
@@ -115,15 +129,15 @@ func (f *FDB) ReadWAL() ([]RevRecord, error) {
 type walCollector struct {
 	f *FDB
 	// output
-	batchEvents []RevRecord
-	records     []RevRecord
+	batchEvents []*WalRecord
+	records     []*WalRecord
 }
 
 func newWalCollector(f *FDB) *walCollector {
 	return &walCollector{
 		f:           f,
-		batchEvents: make([]RevRecord, 0, 1000),
-		records:     make([]RevRecord, 0, 1000),
+		batchEvents: make([]*WalRecord, 0, 1000),
+		records:     make([]*WalRecord, 0, 1000),
 	}
 }
 
@@ -132,19 +146,19 @@ func (c *walCollector) startBatch() {
 }
 
 func (c *walCollector) next(_ *fdb.Transaction, it *fdb.RangeIterator) (fdb.Key, bool, error) {
-	//latestRev, record, err := c.f.wal.GetFromIterator(it)
-	rev, record, err := c.f.byRevision.GetFromIterator(it)
+	record, err := c.f.wal.GetFromIterator(it)
+	//rev, record, err := c.f.byRevision.GetFromIterator(it)
 	if err != nil {
 		return nil, false, err
 	}
-	if rev == nil {
+	if record == nil {
 		return nil, false, nil
 	}
 
-	c.batchEvents = append(c.batchEvents, RevRecord{Rev: *rev, Record: record})
+	c.batchEvents = append(c.batchEvents, record)
 
-	//return c.f.wal.GetSubspace().Pack(tuple.Tuple{*latestRev, math.MaxInt64}), true, nil
-	return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), true, nil
+	return c.f.wal.GetSubspace().Pack(tuple.Tuple{record.Rev, math.MaxInt64}), true, nil
+	//return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), true, nil
 }
 
 func (c *walCollector) endBatch(*fdb.Transaction, bool) error {

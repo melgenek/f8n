@@ -7,7 +7,7 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
-	"math"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"strings"
 )
 
@@ -16,26 +16,42 @@ type RevResult struct {
 	revRecords      []*RevRecord
 }
 
-func (f *FDB) CurrentRevision(_ context.Context) (int64, error) {
-	lastWatchRev := int64(math.MaxInt64)
-	f.lastWatchRevByWatch.Range(func(key, value any) bool {
-		if v, ok := value.(int64); ok && v < lastWatchRev {
-			lastWatchRev = v
-		}
-		return true
-	})
+func (f *FDB) CurrentRevision(ctx context.Context) (int64, error) {
+	watchId := int64(clientv3.InvalidWatchID)
+	if ctx.Value("watchId") != nil {
+		watchId = ctx.Value("watchId").(int64)
+	}
 
-	if lastWatchRev != math.MaxInt64 {
+	//if watchId != clientv3.InvalidWatchID {
+	//	lastWatchRev := int64(math.MaxInt64)
+	//	f.lastWatchRevByWatch.Range(func(key, value any) bool {
+	//		if v, ok := value.(int64); ok && v < lastWatchRev {
+	//			lastWatchRev = v
+	//		}
+	//		return true
+	//	})
+	//	return lastWatchRev, nil
+	//} else
+
+	//if lastWatchRev, ok := f.lastWatchRevByWatch.Load(watchId); ok {
+	//	fmt.Printf("Found lastWatchRev for watchId %d. Rev: %v\n", watchId, lastWatchRev)
+	//	return lastWatchRev.(int64), nil
+	//} else
+	//
+	lastWatchRev := f.lastWatchRev.Load()
+	if lastWatchRev != 0 {
 		return lastWatchRev, nil
 	} else {
-		key, err := transact(f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
+		fmt.Printf("Could not find lastWatchRev for watchId %d. Getting latestRev from DB\n", watchId)
+		rev, err := transact(f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
 			if latestRev, err := f.rev.GetLatestRev(&tr); err != nil {
 				return 0, err
 			} else {
 				return latestRev.Get()
 			}
 		})
-		return key, err
+
+		return rev, err
 	}
 }
 

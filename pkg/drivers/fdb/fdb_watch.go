@@ -8,6 +8,7 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"math"
 	"strings"
 )
@@ -66,8 +67,11 @@ func (f *FDB) Watch(ctx context.Context, prefix string, minRevision int64) serve
 		lastRevision = afterResult.events[len(afterResult.events)-1].KV.ModRevision
 	}
 
-	currentWatchId := f.watchId.Add(1)
-	f.lastWatchRevByWatch.Store(currentWatchId, lastRevision)
+	watchId := int64(clientv3.InvalidWatchID)
+	if ctx.Value("watchId") != nil {
+		watchId = ctx.Value("watchId").(int64)
+	}
+	f.lastWatchRevByWatch.Store(watchId, lastRevision)
 	go func() {
 		if len(afterResult.events) > 0 {
 			for _, event := range afterResult.events {
@@ -86,7 +90,7 @@ func (f *FDB) Watch(ctx context.Context, prefix string, minRevision int64) serve
 				}
 				if len(events) > 0 {
 					result <- events
-					f.lastWatchRevByWatch.Store(currentWatchId, lastRevision)
+					f.lastWatchRevByWatch.Store(watchId, events[len(events)-1].KV.ModRevision)
 				}
 			case <-ctx.Done():
 				readMore = false
@@ -95,7 +99,8 @@ func (f *FDB) Watch(ctx context.Context, prefix string, minRevision int64) serve
 
 		close(result)
 		cancel()
-		f.lastWatchRevByWatch.Delete(currentWatchId)
+
+		f.lastWatchRevByWatch.Delete(watchId)
 	}()
 
 	return wr
@@ -142,7 +147,8 @@ func (f *FDB) startWatch() (chan interface{}, error) {
 }
 
 func (f *FDB) poll(result chan interface{}, pollStart int64) {
-	currentRev := pollStart
+	//currentRev := pollStart
+	f.lastWatchRev.Store(pollStart)
 
 	defer close(result)
 
@@ -161,8 +167,10 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 		}
 
 		var events []*server.Event
+		var lastRev int64
+		currentRev := f.lastWatchRev.Load()
 		logrus.Tracef("POLLING latestRev=%d", currentRev)
-		for events, err = f.afterBatch(currentRev, func(s string) bool { return true }); err != nil; {
+		for lastRev, events, err = f.afterBatch(currentRev, func(s string) bool { return true }); err != nil; {
 			logrus.Errorf("Error in 'afterBatch' err=%v", err)
 		}
 		logrus.Tracef("AFTER POLL latestRev=%d => res=%v err=%v", currentRev, len(events), err)
@@ -172,10 +180,16 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 
 		if len(events) > 0 {
 			result <- events
-			currentRev = events[len(events)-1].KV.ModRevision
+
 			watchFuture.(fdb.FutureNil).Cancel()
 		} else if err := watchFuture.(fdb.FutureNil).Get(); err != nil {
 			logrus.Errorf("Error waiting for a watch err=%v", err)
+		}
+		if len(events) > 0 {
+			f.lastWatchRev.Store(events[len(events)-1].KV.ModRevision)
+		} else {
+			f.lastWatchRev.Store(lastRev)
+			//currentRev = lastRev
 		}
 	}
 }
@@ -303,12 +317,12 @@ func (f *FDB) afterAll(minRevision int64, takeKey func(string) bool) (AfterResul
 	}, err
 }
 
-func (f *FDB) afterBatch(minRevision int64, takeKey func(string) bool) ([]*server.Event, error) {
+func (f *FDB) afterBatch(minRevision int64, takeKey func(string) bool) (int64, []*server.Event, error) {
 	selector := f.afterRevisionSelector(minRevision)
 
 	collector := newAfterCollector(f, minRevision, false, maxBatchSize, takeKey)
 	_, err := processBatch(f.db, selector, collector)
-	return collector.events, err
+	return collector.latestRev, collector.events, err
 }
 
 func (f *FDB) afterRevisionSelector(minRevision int64) fdb.SelectorRange {

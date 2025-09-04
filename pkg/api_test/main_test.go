@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package app
+package api_test
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	forkedFailpoint "github.com/melgenek/f8n/pkg/app/failpoint"
-	etcdFDB "github.com/melgenek/f8n/pkg/app/fdb"
-	forkedTraffic "github.com/melgenek/f8n/pkg/app/traffic"
-	forkedValidate "github.com/melgenek/f8n/pkg/app/validate"
+	forkedFailpoint "github.com/melgenek/f8n/pkg/api_test/failpoint"
+	etcdFDB "github.com/melgenek/f8n/pkg/api_test/fdb"
+	forkedTraffic "github.com/melgenek/f8n/pkg/api_test/traffic"
+	forkedValidate "github.com/melgenek/f8n/pkg/api_test/validate"
 	"github.com/melgenek/f8n/pkg/drivers/fdb"
 	_ "github.com/melgenek/f8n/pkg/drivers/fdb"
 	"github.com/sirupsen/logrus"
@@ -53,10 +53,26 @@ var (
 )
 
 var tsc = []scenarios.TestScenario{
+	//{
+	//	Name:    "KubernetesLowTraffic",
+	//	Traffic: traffic.Kubernetes,
+	//	Profile: traffic.LowTraffic,
+	//	Watch: client.WatchConfig{
+	//		RequestProgress: true,
+	//	},
+	//	Failpoint: forkedFailpoint.DummyFailpoint{},
+	//},
 	{
 		Name:    "KubernetesLowTraffic",
 		Traffic: traffic.Kubernetes,
-		Profile: traffic.LowTraffic,
+		Profile: traffic.Profile{
+			MinimalQPS:                     100,
+			MaximalQPS:                     200,
+			BurstableQPS:                   1000,
+			ClientCount:                    1,
+			MaxNonUniqueRequestConcurrency: 3,
+			ForbidCompaction:               true,
+		},
 		Watch: client.WatchConfig{
 			RequestProgress: true,
 		},
@@ -65,6 +81,7 @@ var tsc = []scenarios.TestScenario{
 }
 
 func TestRobustnessExploratory(t *testing.T) {
+	rand.Seed(1)
 	logrus.SetLevel(logrus.TraceLevel)
 	fdb.CorrectnessTesting = true
 	fdb.UseSequentialId = true
@@ -98,7 +115,7 @@ func testRobustness(ctx context.Context, t *testing.T, lg *zap.Logger, s scenari
 		Traffic:         &report.TrafficDetail{ExpectUniqueRevision: s.Traffic.ExpectUniqueRevision()},
 	}
 	var persistedRequests []model.EtcdRequest
-	var walToEtcdRequestsMapping map[fdb.RevRecord]model.EtcdRequest
+	var walToEtcdRequestsMapping []etcdFDB.WalDump
 	var err error
 	// t.Failed() returns false during panicking. We need to forcibly
 	// save data on panicking.
@@ -137,7 +154,7 @@ func testRobustness(ctx context.Context, t *testing.T, lg *zap.Logger, s scenari
 	panicked = false
 }
 
-func persistWAL(t *testing.T, resultsDirectory string, requests map[fdb.RevRecord]model.EtcdRequest) {
+func persistWAL(t *testing.T, resultsDirectory string, requests []etcdFDB.WalDump) {
 	file, err := os.Create(filepath.Join(resultsDirectory, "wal.json"))
 	if err != nil {
 		t.Errorf("Failed to save WAL: %v", err)
@@ -145,23 +162,8 @@ func persistWAL(t *testing.T, resultsDirectory string, requests map[fdb.RevRecor
 	}
 	defer file.Close()
 	encoder := json.NewEncoder(file)
-	for k, v := range requests {
-		type Dump struct {
-			PrevRev  int64
-			Rev      int64
-			Key      string
-			IsCreate bool
-			IsDelete bool
-			Req      model.EtcdRequest
-		}
-		err := encoder.Encode(Dump{
-			Rev:      fdb.VersionstampToInt64(k.Rev),
-			PrevRev:  fdb.VersionstampToInt64(k.Record.PrevRevision),
-			Key:      k.Record.Key,
-			IsCreate: k.Record.IsCreate,
-			IsDelete: k.Record.IsDelete,
-			Req:      v,
-		})
+	for _, v := range requests {
+		err := encoder.Encode(v)
 		if err != nil {
 			t.Errorf("Failed to encode operation: %v", err)
 		}

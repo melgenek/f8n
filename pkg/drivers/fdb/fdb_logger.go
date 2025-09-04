@@ -62,8 +62,8 @@ func (b *FdbLogger) Update(ctx context.Context, key string, value []byte, revisi
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "UPDATE %s, value=%d, latestRev=%d, lease=%v => latestRev=%d, updated=%v, err=%v, duration=%s"
-		b.logMethod(dur, fStr, key, len(value), revision, lease, revRet, updateRet, errRet, dur)
+		fStr := "UPDATE %s, value=%d, latestRev=%d, lease=%v => latestRev=%d, kv=%v, updated=%v, err=%v, duration=%s"
+		b.logMethod(dur, fStr, key, len(value), revision, lease, revRet, kvRet != nil, updateRet, errRet, dur)
 	}()
 
 	return b.backend.Update(ctx, key, value, revision, lease)
@@ -120,8 +120,9 @@ func (b *FdbLogger) CurrentRevision(ctx context.Context) (revRet int64, errRet e
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "CURRENT_REV => revRet=%d, err=%v, duration=%s"
-		b.logMethod(dur, fStr, revRet, errRet, dur)
+		fStr := "CURRENT_REV %v => revRet=%d, err=%v, duration=%s"
+		watchId := ctx.Value("watchId")
+		b.logMethod(dur, fStr, watchId, revRet, errRet, dur)
 	}()
 	return b.backend.CurrentRevision(ctx)
 }

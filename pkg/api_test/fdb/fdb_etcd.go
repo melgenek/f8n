@@ -2,7 +2,7 @@ package fdb
 
 import (
 	"context"
-	"github.com/k3s-io/kine/pkg/endpoint"
+	"github.com/melgenek/f8n/pkg/endpoint"
 	"go.etcd.io/etcd/pkg/v3/proxy"
 	"go.etcd.io/etcd/tests/v3/framework/config"
 	"go.etcd.io/etcd/tests/v3/framework/e2e"

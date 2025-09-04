@@ -7,46 +7,65 @@ import (
 	"strconv"
 )
 
-func WALToEtcdRequests() ([]model.EtcdRequest, map[fdb.RevRecord]model.EtcdRequest, error) {
+type WalDump struct {
+	PrevRev     int64
+	Rev         int64
+	ExpectedRev int64
+	Key         string
+	IsCreate    bool
+	IsDelete    bool
+	Req         model.EtcdRequest
+}
+
+func WALToEtcdRequests() ([]model.EtcdRequest, []WalDump, error) {
 	wal, err := fdb.ThisFDB.ReadWAL()
 	if err != nil {
 		return nil, nil, err
 	}
 	requests := make([]model.EtcdRequest, 0, len(wal))
-	mapping := make(map[fdb.RevRecord]model.EtcdRequest)
+	walDumps := make([]WalDump, 0, len(wal))
 	for _, walReq := range wal {
 		var req model.EtcdRequest
-		if walReq.Record.IsCreate {
-			req = Create(walReq.Record.Key, walReq.Record.Value)
-		} else if walReq.Record.IsDelete {
-			req = Delete(walReq.Record.Key, fdb.VersionstampToInt64(walReq.Record.PrevRevision))
+		if walReq.IsCreate {
+			req = Create(walReq.Key, walReq.Value)
+		} else if walReq.IsDelete {
+			req = Delete(walReq.Key, fdb.VersionstampToInt64(walReq.PrevRevision), walReq.ExpectedRevision)
 		} else {
 			req = Update(
-				walReq.Record.Key,
-				walReq.Record.Value,
-				fdb.VersionstampToInt64(walReq.Record.PrevRevision),
+				walReq.Key,
+				walReq.Value,
+				fdb.VersionstampToInt64(walReq.PrevRevision),
 				fdb.VersionstampToInt64(walReq.Rev),
+				walReq.ExpectedRevision,
 			)
 		}
 		requests = append(requests, req)
-		mapping[walReq] = req
+		walDumps = append(walDumps, WalDump{
+			Rev:         fdb.VersionstampToInt64(walReq.Rev),
+			PrevRev:     fdb.VersionstampToInt64(walReq.PrevRevision),
+			ExpectedRev: walReq.ExpectedRevision,
+			Key:         walReq.Key,
+			IsCreate:    walReq.IsCreate,
+			IsDelete:    walReq.IsDelete,
+			Req:         req,
+		})
 	}
 
-	return requests, mapping, nil
+	return requests, walDumps, nil
 }
 
 func Create(key string, value []byte) model.EtcdRequest {
 	key = replaceKey(key)
-	version := maybeVersion(key, value)
+	//version := maybeVersion(key, value)
 	conditions := []model.EtcdCondition{}
 	successOps := []model.EtcdOperation{}
 	failureOps := []model.EtcdOperation{}
 	if key == "compact_rev_key" {
-		revAsValue := fmt.Appendf(nil, "%d", 0)
 		conditions = append(conditions, model.EtcdCondition{
 			Key:             key,
-			ExpectedVersion: version,
+			ExpectedVersion: 0,
 		})
+		revAsValue := fmt.Appendf(nil, "%d", 0)
 		successOps = append(successOps, model.EtcdOperation{
 			Type: model.PutOperation,
 			Put: model.PutOptions{
@@ -63,16 +82,16 @@ func Create(key string, value []byte) model.EtcdRequest {
 			},
 		})
 	} else {
+		conditions = append(conditions, model.EtcdCondition{
+			Key:              key,
+			ExpectedRevision: 0,
+		})
 		successOps = append(successOps, model.EtcdOperation{
 			Type: model.PutOperation,
 			Put: model.PutOptions{
 				Key:   key,
 				Value: model.ToValueOrHash(string(value)),
 			},
-		})
-		conditions = append(conditions, model.EtcdCondition{
-			Key:              key,
-			ExpectedRevision: 0,
 		})
 	}
 	request := model.EtcdRequest{
@@ -86,29 +105,16 @@ func Create(key string, value []byte) model.EtcdRequest {
 	return request
 }
 
-//logger.go:146: 2025-09-02T09:09:23.929+0200	ERROR	Broke watch guarantee	{"guarantee": "reliable", "client": 2, "diff": "  []model.PersistedEvent{
-//  \t... // 458 identical elements
-//  \t{Event: {Type: \"put-operation\", Key: \"/registry/pods/default/8iAu9\", Value: {Value: \"615\"}}, Revision: 460},
-//  \t{Event: {Type: \"put-operation\", Key: \"/registry/pods/default/ep8rS\", Value: {Value: \"602\"}}, Revision: 461},
-//- \t{
-//- \t\tEvent: model.Event{
-//- \t\t\tType:  \"put-operation\",
-//- \t\t\tKey:   \"compact_rev_key\",
-//- \t\t\tValue: model.ValueOrHash{Value: \"0\"},
-//- \t\t},
-//- \t\tRevision: 462,
-//- \t\tIsCreate: true,
-//- \t},
-//  \t{Event: {Type: \"put-operation\", Key: \"/tombstone\", Value: {Value: \"true\"}}, Revision: 463, ...},
-//  }
-//"}
-
-func Update(key string, value []byte, prevRevision int64, currentRevision int64) model.EtcdRequest {
+func Update(key string, value []byte, prevRevision int64, currentRevision int64, expectedRev int64) model.EtcdRequest {
 	key = replaceKey(key)
 	version := maybeVersion(key, value)
 	successOps := []model.EtcdOperation{}
 	conditions := []model.EtcdCondition{}
 	if key == "compact_rev_key" {
+		conditions = append(conditions, model.EtcdCondition{
+			Key:             key,
+			ExpectedVersion: version,
+		})
 		revAsValue := fmt.Appendf(nil, "%d", prevRevision)
 		successOps = append(successOps, model.EtcdOperation{
 			Type: model.PutOperation,
@@ -117,21 +123,17 @@ func Update(key string, value []byte, prevRevision int64, currentRevision int64)
 				Value: model.ToValueOrHash(string(revAsValue)),
 			},
 		})
-		conditions = append(conditions, model.EtcdCondition{
-			Key:             key,
-			ExpectedVersion: version,
-		})
 	} else {
+		conditions = append(conditions, model.EtcdCondition{
+			Key:              key,
+			ExpectedRevision: expectedRev,
+		})
 		successOps = append(successOps, model.EtcdOperation{
 			Type: model.PutOperation,
 			Put: model.PutOptions{
 				Key:   key,
 				Value: model.ToValueOrHash(string(value)),
 			},
-		})
-		conditions = append(conditions, model.EtcdCondition{
-			Key:              key,
-			ExpectedRevision: prevRevision,
 		})
 	}
 
@@ -155,14 +157,14 @@ func Update(key string, value []byte, prevRevision int64, currentRevision int64)
 	return request
 }
 
-func Delete(key string, rev int64) model.EtcdRequest {
+func Delete(key string, rev int64, expectedRev int64) model.EtcdRequest {
 	conditions := []model.EtcdCondition{}
 	successOps := []model.EtcdOperation{}
 	failureOps := []model.EtcdOperation{}
-	if rev != 0 {
+	if expectedRev != 0 {
 		conditions = append(conditions, model.EtcdCondition{
 			Key:              key,
-			ExpectedRevision: rev,
+			ExpectedRevision: expectedRev,
 		})
 		successOps = append(successOps, model.EtcdOperation{
 			Type: model.DeleteOperation,
@@ -205,6 +207,8 @@ func Delete(key string, rev int64) model.EtcdRequest {
 	return request
 }
 
+// Kine uses "compact_rev_key" internally, so API server compaction key is stored as "compact_rev_key_apiserver"
+// https://github.com/k3s-io/kine/blob/7399536ef0e5ebd2356c9ac68d8c8850dd07a231/pkg/server/compact.go#L14C2-L14C15
 func replaceKey(key string) string {
 	if key == "compact_rev_key_apiserver" {
 		return "compact_rev_key"
@@ -213,13 +217,15 @@ func replaceKey(key string) string {
 	}
 }
 
+// In Kine version is stored as value and only for the compaction key
+// https://github.com/k3s-io/kine/blob/7399536ef0e5ebd2356c9ac68d8c8850dd07a231/pkg/server/compact.go#L56
 func maybeVersion(key string, value []byte) int64 {
 	if key == "compact_rev_key" {
-		version, err := strconv.Atoi(string(value))
+		version, err := strconv.ParseInt(string(value), 10, 64)
 		if err != nil {
 			panic(err)
 		}
-		return int64(version - 1)
+		return version
 	} else {
 		return 0
 	}

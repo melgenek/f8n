@@ -147,6 +147,8 @@ func (states nonDeterministicState) applyRequestWithResponse(request model.EtcdR
 		newState, modelResponse := s.Step(request)
 		if model.Match(modelResponse, model.MaybeEtcdResponse{EtcdResponse: response}) {
 			newStates = append(newStates, newState)
+		} else {
+			fmt.Printf("MISMATCH:\nREQUEST: %s\nREAL: %+v %v\nMODEL: %+v %v\nSTATE: %s\n\n", describeEtcdRequest(request), response.Txn, response.Revision, modelResponse.Txn, modelResponse.Revision, describeEtcdState(s))
 		}
 	}
 	return newStates

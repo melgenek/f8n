@@ -1,0 +1,81 @@
+ logger.go:146: 2025-09-04T09:37:00.093+0200	ERROR	Broke watch guarantee	{"guarantee": "reliable", "client": 3, "diff": "  []model.PersistedEvent{
+    ... // 21 identical elements
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/4jjJk\", Value: {Value: \"28\"}}, Revision: 25},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sc2WD\", Value: {Value: \"29\"}}, Revision: 26},
++   {
++     Event:    model.Event{Type: \"delete-operation\", Key: \"/registry/pods/default/HK5a8\"},
++     Revision: 27,
++   },
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sc2WD\", Value: {Value: \"31\"}}, Revision: 28},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/wzDkh\", Value: {Value: \"32\"}}, Revision: 29},
+    ... // 42 identical elements
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/wzDkh\", Value: {Value: \"89\"}}, Revision: 72},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sToFg\", Value: {Value: \"90\"}}, Revision: 73},
++   {
++     Event:    model.Event{Type: \"delete-operation\", Key: \"/registry/pods/default/wzDkh\"},
++     Revision: 74,
++   },
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/BIabK\", Value: {Value: \"91\"}}, Revision: 75},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/FiUIL\", Value: {Value: \"92\"}}, Revision: 76},
+    ... // 27 identical elements
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/ZmD1j\", Value: {Value: \"124\"}}, Revision: 104, ...},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sToFg\", Value: {Value: \"125\"}}, Revision: 105},
++   {
++     Event:    model.Event{Type: \"delete-operation\", Key: \"/registry/pods/default/4jjJk\"},
++     Revision: 106,
++   },
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/ZmD1j\", Value: {Value: \"126\"}}, Revision: 107},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/eUjoA\", Value: {Value: \"127\"}}, Revision: 108, ...},
+    ... // 26 identical elements
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/LnfgD\", Value: {Value: \"157\"}}, Revision: 135},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sc2WD\", Value: {Value: \"158\"}}, Revision: 136},
++   {
++     Event:    model.Event{Type: \"delete-operation\", Key: \"/registry/pods/default/BIabK\"},
++     Revision: 137,
++   },
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sToFg\", Value: {Value: \"159\"}}, Revision: 138},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sc2WD\", Value: {Value: \"160\"}}, Revision: 139},
+    ... // 21 identical elements
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sToFg\", Value: {Value: \"187\"}}, Revision: 161},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/ZmD1j\", Value: {Value: \"188\"}}, Revision: 162},
++   {
++     Event:    model.Event{Type: \"delete-operation\", Key: \"/registry/pods/default/8F2qN\"},
++     Revision: 163,
++   },
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/LnfgD\", Value: {Value: \"189\"}}, Revision: 164},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sToFg\", Value: {Value: \"190\"}}, Revision: 165},
+    ... // 24 identical elements
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sc2WD\", Value: {Value: \"222\"}}, Revision: 190},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/FiUIL\", Value: {Value: \"225\"}}, Revision: 191},
++   {
++     Event:    model.Event{Type: \"delete-operation\", Key: \"/registry/pods/default/eUjoA\"},
++     Revision: 192,
++   },
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/FiUIL\", Value: {Value: \"226\"}}, Revision: 193},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/ZmD1j\", Value: {Value: \"227\"}}, Revision: 194},
+    ... // 49 identical elements
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/WWig3\", Value: {Value: \"288\"}}, Revision: 244},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/ZmD1j\", Value: {Value: \"289\"}}, Revision: 245},
++   {
++     Event:    model.Event{Type: \"delete-operation\", Key: \"/registry/pods/default/sc2WD\"},
++     Revision: 246,
++   },
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/WWig3\", Value: {Value: \"290\"}}, Revision: 247},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/sToFg\", Value: {Value: \"291\"}}, Revision: 248},
+    ... // 17 identical elements
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/PHcD1\", Value: {Value: \"313\"}}, Revision: 266},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/FiUIL\", Value: {Value: \"314\"}}, Revision: 267},
++   {
++     Event:    model.Event{Type: \"delete-operation\", Key: \"/registry/pods/default/VZlr9\"},
++     Revision: 268,
++   },
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/LnfgD\", Value: {Value: \"315\"}}, Revision: 269},
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/FiUIL\", Value: {Value: \"316\"}}, Revision: 270},
++   {
++     Event:    model.Event{Type: \"delete-operation\", Key: \"/registry/pods/default/DARHE\"},
++     Revision: 271,
++   },
+    {Event: {Type: \"put-operation\", Key: \"/registry/pods/default/ZmD1j\", Value: {Value: \"317\"}}, Revision: 272},
+  }
+"}
+   

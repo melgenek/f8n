@@ -36,12 +36,14 @@ func NewReplay(persistedRequests []model.EtcdRequest) *EtcdReplay {
 	return &EtcdReplay{
 		revisionToEtcdState: revisionToEtcdState,
 		Events:              events,
+		PersistedRequests:   persistedRequests,
 	}
 }
 
 type EtcdReplay struct {
 	revisionToEtcdState []EtcdState
 	Events              []model.PersistedEvent
+	PersistedRequests   []model.EtcdRequest
 }
 
 func (r *EtcdReplay) StateForRevision(revision int64) (EtcdState, error) {

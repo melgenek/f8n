@@ -16,7 +16,7 @@ package validate
 
 import (
 	"errors"
-	forkedModel "github.com/melgenek/f8n/pkg/app/model"
+	forkedModel "github.com/melgenek/f8n/pkg/api_test/model"
 	"go.etcd.io/etcd/tests/v3/robustness/validate"
 	"time"
 
@@ -111,22 +111,22 @@ func validateFilter(lg *zap.Logger, report report.ClientReport) (err error) {
 func validateBookmarkable(lg *zap.Logger, report report.ClientReport) (err error) {
 	for _, op := range report.Watch {
 		var lastProgressNotifyRevision int64
-		var lastEventRevision int64
+		var lastEvent model.WatchEvent
 		for _, resp := range op.Responses {
 			for _, event := range resp.Events {
 				if event.Revision <= lastProgressNotifyRevision {
-					lg.Error("Broke watch guarantee", zap.String("guarantee", "bookmarkable1"), zap.Int("client", report.ClientID), zap.Int64("revision", event.Revision), zap.Int64("lastProgressNotifyRevision", lastProgressNotifyRevision))
+					lg.Error("Broke watch guarantee", zap.String("guarantee", "bookmarkable1"), zap.Int("client", report.ClientID), zap.Any("event", event), zap.Int64("lastProgressNotifyRevision", lastProgressNotifyRevision))
 					err = errBrokeBookmarkable
 				}
-				lastEventRevision = event.Revision
+				lastEvent = event
 			}
 			if resp.IsProgressNotify {
 				if resp.Revision < lastProgressNotifyRevision {
-					lg.Error("Broke watch guarantee", zap.String("guarantee", "bookmarkable2"), zap.Int("client", report.ClientID), zap.Int64("revision", resp.Revision))
+					lg.Error("Broke watch guarantee", zap.String("guarantee", "bookmarkable2"), zap.Int("client", report.ClientID), zap.Int64("revision", resp.Revision), zap.Any("lastProgressNotifyRevision", lastProgressNotifyRevision))
 					err = errBrokeBookmarkable
 				}
-				if resp.Revision < lastEventRevision {
-					lg.Error("Broke watch guarantee", zap.String("guarantee", "bookmarkable3"), zap.Int("client", report.ClientID), zap.Int64("revision", resp.Revision))
+				if resp.Revision < lastEvent.Revision {
+					lg.Error("Broke watch guarantee", zap.String("guarantee", "bookmarkable3"), zap.Int("client", report.ClientID), zap.Any("resp", resp), zap.Any("lastEvent", lastEvent))
 					err = errBrokeBookmarkable
 				}
 				lastProgressNotifyRevision = resp.Revision

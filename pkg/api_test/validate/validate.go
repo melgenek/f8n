@@ -17,7 +17,7 @@ package validate
 import (
 	"errors"
 	"fmt"
-	forkedModel "github.com/melgenek/f8n/pkg/app/model"
+	forkedModel "github.com/melgenek/f8n/pkg/api_test/model"
 	"go.etcd.io/etcd/tests/v3/robustness/validate"
 	"math"
 	"time"
@@ -73,7 +73,7 @@ func prepareAndCategorizeOperations(reports []report.ClientReport) (linearizable
 			if isSerializable(request, response) {
 				serializable = append(serializable, op)
 			}
-			// Operation that will not be linearized need to be added separetly to visualization.
+			// Operation that will not be linearized need to be added separately to visualization.
 			if !isLinearizable(request, response) {
 				forVisualization = append(forVisualization, op)
 				continue
