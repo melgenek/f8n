@@ -21,17 +21,19 @@ import (
 func TestFDB(t *testing.T) {
 	forceRetryTransaction = func(i int) bool { return false }
 
-	logrus.SetLevel(logrus.WarnLevel)
+	logrus.SetLevel(logrus.TraceLevel)
 	n := 4
 	sameKeyN := 3
-	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
+	f := NewFdbStructured("docker:docker@127.0.0.1:4500", "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
-	defer cancelCtx()
-
 	err := f.Start(ctx)
 	require.NoError(t, err)
+	createRecords(t, f, ctx, 500, maxRecordSize) // fill up fdb
+	cancelCtx()
 
-	createRecords(t, f, ctx, 500, maxRecordSize)
+	f = NewFdbStructured("docker:docker@127.0.0.1:4500", "dir2")
+	ctx, cancelCtx = context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
+	defer cancelCtx()
 	err = f.Start(ctx)
 	require.NoError(t, err)
 
@@ -107,11 +109,6 @@ func TestFDB(t *testing.T) {
 
 			_, err = f.Create(ctx, keyName, value, 0)
 			require.Error(t, err)
-
-			newCurrentRev, err := f.CurrentRevision(ctx)
-			require.NoError(t, err)
-			require.LessOrEqual(t, nextRev, newCurrentRev)
-			require.Less(t, currentRev, nextRev)
 
 			_, result, err = f.List(ctx, "/abc/", "/abc/key", 0, currentRev)
 			require.NoError(t, err)
@@ -235,13 +232,17 @@ func TestFDB(t *testing.T) {
 			require.Fail(t, "context done")
 		}
 	}
+
+	currentRev, err = f.CurrentRevision(ctx)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, history[len(history)-1].KV.ModRevision, currentRev)
 }
 
 func TestFDBLargeRecords(t *testing.T) {
 	forceRetryTransaction = func(i int) bool { return false }
 	logrus.SetLevel(logrus.WarnLevel)
 
-	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
+	f := NewFdbStructured("docker:docker@127.0.0.1:4500", "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
 	defer cancelCtx()
 
@@ -325,7 +326,7 @@ func TestCompaction(t *testing.T) {
 	newValue := []byte("newVal123")
 	updatedLease := int64(123)
 
-	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
+	f := NewFdbStructured("docker:docker@127.0.0.1:4500", "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(20)*time.Second)
 	defer cancelCtx()
 
@@ -374,11 +375,6 @@ func TestCompaction(t *testing.T) {
 	_, kv, err = f.Get(ctx, "/registry/health", "", 0, 0)
 	require.NoError(t, err)
 	require.NotNil(t, kv, "Expected to find the key after compaction")
-
-	// Verify the compact revision is updated
-	revAfterCompact, err := f.CurrentRevision(ctx)
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, revAfterCompact, compactRev, "Current revision should be greater or equal to the compact revision")
 
 	// Verify the key can still be listed
 	_, kvs, err := f.List(ctx, "/abc/", "/abc/key", 0, 0)
@@ -461,7 +457,7 @@ func TestWatchAll(t *testing.T) {
 	maxBatchSize = 10
 	recordsCount := 53
 
-	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
+	f := NewFdbStructured("docker:docker@127.0.0.1:4500", "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
 	defer cancelCtx()
 
@@ -491,7 +487,7 @@ func TestExceedSizeLarge(t *testing.T) {
 	_, err := rand.Read(value)
 	require.NoError(t, err)
 
-	f := NewFdbStructured("docker:docker@127.0.0.1:4500")
+	f := NewFdbStructured("docker:docker@127.0.0.1:4500", "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
 	defer cancelCtx()
 

@@ -16,10 +16,20 @@ type RevResult struct {
 }
 
 func (f *FDB) CurrentRevision(_ context.Context) (int64, error) {
-	key, err := transact(f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
-		return tr.GetReadVersion().Get()
-	})
-	return key, err
+	lastWatchRev := f.lastWatchRev.Load()
+	if lastWatchRev != 0 {
+		return lastWatchRev, nil
+	} else {
+		rev, err := transact(f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
+			if latestRev, err := f.rev.GetLatestRev(&tr); err != nil {
+				return 0, err
+			} else {
+				return latestRev.Get()
+			}
+		})
+
+		return rev, err
+	}
 }
 
 func (f *FDB) List(_ context.Context, prefix, startKey string, limit, revision int64) (revRet int64, kvRet []*server.KeyValue, errRet error) {
@@ -226,7 +236,7 @@ func (c *recordCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.
 		c.batchCurrentRecord = nil
 	}
 
-	recordRev := versionstampToInt64(nextKeyAndRevRecord.Key.Rev)
+	recordRev := VersionstampToInt64(nextKeyAndRevRecord.Key.Rev)
 	if (c.maxRevision == 0 || recordRev <= c.maxRevision) && (c.rev == 0 || recordRev <= c.rev) {
 		c.batchCurrentRecord = nextKeyAndRevRecord
 	}
@@ -248,7 +258,9 @@ func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
 	// Get the read revision for the first batch.
 	// Do not read records that might've been concurrently added that are over this revision.
 	if c.rev == 0 {
-		if rev, err := tr.GetReadVersion().Get(); err != nil {
+		if latestRevF, err := c.f.rev.GetLatestRev(tr); err != nil {
+			return err
+		} else if rev, err := latestRevF.Get(); err != nil {
 			return err
 		} else {
 			c.batchRev = rev
@@ -259,7 +271,7 @@ func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
 	if c.maxRevision > 0 {
 		if compactRev, err := c.f.compactRev.Get(tr); err != nil {
 			return err
-		} else if c.maxRevision < versionstampToInt64(compactRev) {
+		} else if c.maxRevision < VersionstampToInt64(compactRev) {
 			return server.ErrCompacted
 		}
 	}
@@ -297,7 +309,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 		// searching for prefix
 		packedStartKey := f.byKeyAndRevision.GetSubspace().Pack(tuple.Tuple{startKey})
 		if prefix != startKey {
-			// next key after the packedStartKey
+			// next key afterAll the packedStartKey
 			packedStartKeyKey, err := fdb.Strinc(packedStartKey)
 			if err != nil {
 				return 0, fmt.Errorf("failed to create begin for listKeyValue: %w", err)

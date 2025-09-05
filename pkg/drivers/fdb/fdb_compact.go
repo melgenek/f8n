@@ -66,12 +66,16 @@ func (c *compactProcessor) String() string {
 }
 
 func (f *FDB) Compact(_ context.Context, endRev int64) (int64, error) {
-	begin, _ := f.byRevision.GetSubspace().FDBRangeKeySelectors()
-	end := fdb.FirstGreaterThan(f.byRevision.GetSubspace().Pack(tuple.Tuple{int64ToVersionstamp(endRev)}))
+	if UseSequentialId {
+		return endRev, nil
+	} else {
+		begin, _ := f.byRevision.GetSubspace().FDBRangeKeySelectors()
+		end := fdb.FirstGreaterThan(f.byRevision.GetSubspace().Pack(tuple.Tuple{int64ToVersionstamp(endRev)}))
 
-	processor := newCompactProcessor(f)
-	if err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, processor); err != nil {
-		return 0, err
+		processor := newCompactProcessor(f)
+		if err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, processor); err != nil {
+			return 0, err
+		}
+		return processor.lastTr.GetCommittedVersion()
 	}
-	return processor.lastTr.GetCommittedVersion()
 }

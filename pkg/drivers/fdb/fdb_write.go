@@ -96,7 +96,7 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 				if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
 					logrus.Tracef("Create succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
 					return newModificationResultRev(
-						ConstInt64Future{versionstampToInt64(lastRecord.Key.Rev)},
+						ConstInt64Future{VersionstampToInt64(lastRecord.Key.Rev)},
 						nil,
 						true,
 					), err
@@ -143,21 +143,27 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 		}
 
 		if lastRecord == nil || lastRecord.Value.IsDelete {
-			return newModificationResultRev(zeroFuture, nil, false), nil
+			if latestRevF, err := f.rev.GetLatestRev(&tr); err != nil {
+				return newModificationResultRev(zeroFuture, nil, false), err
+			} else {
+				return newModificationResultRev(latestRevF, nil, false), nil
+			}
 		}
 
-		if versionstampToInt64(lastRecord.Key.Rev) != revision {
+		if VersionstampToInt64(lastRecord.Key.Rev) != revision {
 			if record, err := f.byRevision.Get(&tr, lastRecord.Key.Rev); err != nil {
 				return newModificationResultRev(zeroFuture, nil, false), err
 			} else if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
-				logrus.Tracef("Update succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
+				logrus.Tracef("Update succeeded in the previous tr attempt '%s', latestRev=%+v", key, lastRecord.Key.Rev)
 				return newModificationResultRev(
-					ConstInt64Future{versionstampToInt64(lastRecord.Key.Rev)},
+					ConstInt64Future{VersionstampToInt64(lastRecord.Key.Rev)},
 					&RevRecord{Rev: lastRecord.Key.Rev, Record: record},
 					true,
 				), nil
+			} else if latestRevF, err := f.rev.GetLatestRev(&tr); err != nil {
+				return newModificationResultRev(zeroFuture, nil, false), err
 			} else {
-				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), err
+				return newModificationResultRev(latestRevF, &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), err
 			}
 		}
 
@@ -195,15 +201,11 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
 
-		if lastRecord == nil {
-			return newModificationResultRev(tr.GetReadVersion(), nil, true), nil
-		}
-
-		if lastRecord.Value.IsDelete {
-			if record, err := f.byRevision.Get(&tr, lastRecord.Key.Rev); err != nil {
+		if lastRecord == nil || lastRecord.Value.IsDelete {
+			if latestRevF, err := f.rev.GetLatestRev(&tr); err != nil {
 				return newModificationResultRev(zeroFuture, nil, false), err
 			} else {
-				return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, true), nil
+				return newModificationResultRev(latestRevF, nil, false), nil
 			}
 		}
 
@@ -212,8 +214,12 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
 
-		if revision != 0 && versionstampToInt64(lastRecord.Key.Rev) != revision {
-			return newModificationResultRev(tr.GetReadVersion(), &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), nil
+		if revision != 0 && VersionstampToInt64(lastRecord.Key.Rev) != revision {
+			if latestRevF, err := f.rev.GetLatestRev(&tr); err != nil {
+				return newModificationResultRev(zeroFuture, nil, false), err
+			} else {
+				return newModificationResultRev(latestRevF, &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), nil
+			}
 		}
 
 		deleteRecord := &Record{
@@ -247,7 +253,10 @@ func setFirstInBatch(tr *fdb.Transaction) error {
 
 func (f *FDB) append(tr *fdb.Transaction, record *Record) (fdb.FutureKey, tuple.UUID, error) {
 	uuid := createUUID()
-	newRev := tuple.IncompleteVersionstamp(0)
+	newRev, revFuture, err := f.rev.IncrementAndGet(tr)
+	if err != nil {
+		return nil, uuid, err
+	}
 	if err := f.byRevision.Write(tr, newRev, record); err != nil {
 		return nil, uuid, err
 	}
@@ -266,5 +275,5 @@ func (f *FDB) append(tr *fdb.Transaction, record *Record) (fdb.FutureKey, tuple.
 		return nil, uuid, err
 	}
 
-	return tr.GetVersionstamp(), uuid, nil
+	return revFuture, uuid, nil
 }

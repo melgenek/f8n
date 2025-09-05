@@ -71,21 +71,17 @@ func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 		// https://forums.foundationdb.org/t/java-why-is-setreadversion-not-part-of-readtransaction-readsnapshot/646/11
 		it := tr.Snapshot().GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
 
-		var firstKey fdb.KeyConvertible
 		collector.startBatch()
 		for i := 0; res.collectorNeedsMore; i++ {
 			if lastKey, collectorNeedsMore, err := collector.next(&tr, it); err != nil {
 				return res, err
 			} else {
-				if firstKey == nil {
-					firstKey = lastKey
-				}
 				res.lastReadKey = lastKey
 				res.collectorNeedsMore = collectorNeedsMore && lastKey != nil
 			}
 			dur := time.Since(start)
 			if dur > splitRangeAfterDuration {
-				logrus.Tracef("SPLITTING RANGE READ i=%d dur=%v => rev=%v res=%v", i, dur, res.lastReadKey, res.collectorNeedsMore)
+				logrus.Tracef("SPLITTING RANGE READ i=%d dur=%v => latestRev=%v needsMore=%v", i, dur, res.lastReadKey, res.collectorNeedsMore)
 				break
 			}
 		}

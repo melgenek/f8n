@@ -62,8 +62,8 @@ func (b *FdbLogger) Update(ctx context.Context, key string, value []byte, revisi
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
-		fStr := "UPDATE %s, value=%d, rev=%d, lease=%v => rev=%d, updated=%v, err=%v, duration=%s"
-		b.logMethod(dur, fStr, key, len(value), revision, lease, revRet, updateRet, errRet, dur)
+		fStr := "UPDATE %s, value=%d, rev=%d, lease=%v => rev=%d, kv=%v, updated=%v, err=%v, duration=%s"
+		b.logMethod(dur, fStr, key, len(value), revision, lease, revRet, kvRet != nil, updateRet, errRet, dur)
 	}()
 
 	return b.backend.Update(ctx, key, value, revision, lease)

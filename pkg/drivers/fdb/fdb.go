@@ -9,11 +9,13 @@ import (
 	"github.com/k3s-io/kine/pkg/drivers"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
+	"sync/atomic"
 	"time"
 )
 
 var (
-	_ server.Backend = &FDB{}
+	_       server.Backend = &FDB{}
+	ThisFDB *FDB
 )
 
 func init() {
@@ -22,35 +24,42 @@ func init() {
 
 func New(_ context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
 	logrus.Info("New FDB backend")
-	return false, NewFdbStructured(cfg.DataSourceName), nil
+	return false, NewFdbStructured(cfg.DataSourceName, "etcd"), nil
 }
 
 type FDB struct {
 	connectionString string
-	db               fdb.Database
-	etcd             directory.DirectorySubspace
+	dirName          string
+
+	db  fdb.Database
+	dir directory.DirectorySubspace
 
 	byRevision       *ByRevisionSubspace
 	byKeyAndRevision *ByKeyAndRevisionSubspace
 	watch            *WatchSubspace
 	compactRev       *CompactRevisionSubspace
+	rev              *RevisionSubspace
 
 	broadcaster broadcaster.Broadcaster
 	ctx         context.Context
+
+	lastWatchRev atomic.Int64
 }
 
-func NewFdbStructured(connectionString string) server.Backend {
+func NewFdbStructured(connectionString string, dirName string) server.Backend {
+	ThisFDB = &FDB{
+		connectionString: connectionString,
+		dirName:          dirName,
+	}
 	return &FdbLogger{
-		backend: &FDB{
-			connectionString: connectionString,
-		},
+		backend:   ThisFDB,
 		threshold: 500 * time.Millisecond,
 	}
 }
 
 func (f *FDB) Start(ctx context.Context) error {
-	f.ctx = ctx
 	fdb.MustAPIVersion(730)
+	f.ctx = ctx
 
 	db, err := fdb.OpenWithConnectionString(f.connectionString)
 	if err != nil {
@@ -58,11 +67,11 @@ func (f *FDB) Start(ctx context.Context) error {
 	}
 	f.db = db
 
-	etcd, err := directory.CreateOrOpen(db, []string{"etcd"}, nil)
+	etcd, err := directory.CreateOrOpen(db, []string{f.dirName}, nil)
 	if err != nil {
 		return err
 	}
-	f.etcd = etcd
+	f.dir = etcd
 
 	// todo don't clear on startup
 	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
@@ -78,11 +87,14 @@ func (f *FDB) Start(ctx context.Context) error {
 	f.byKeyAndRevision = CreateByKeyRevisionSubspace(etcd)
 	f.watch = CreateWatchSubspace(etcd)
 	f.compactRev = CreateCompactRevisionSubspace(etcd)
+	f.rev = CreateRevisionSubspace(etcd)
 
 	// https://github.com/kubernetes/kubernetes/blob/442a69c3bdf6fe8e525b05887e57d89db1e2f3a5/staging/src/k8s.io/apiserver/pkg/storage/storagebackend/factory/etcd3.go#L97
-	if _, err := f.Create(ctx, "/registry/health", []byte(`{"health":"true"}`), 0); err != nil {
-		if !errors.Is(err, server.ErrKeyExists) {
-			logrus.Errorf("Failed to create health check key: %v", err)
+	if !APITest {
+		if _, err := f.Create(ctx, "/registry/health", []byte(`{"health":"true"}`), 0); err != nil {
+			if !errors.Is(err, server.ErrKeyExists) {
+				logrus.Errorf("Failed to create health check key: %v", err)
+			}
 		}
 	}
 	go f.ttl(ctx)
@@ -92,7 +104,7 @@ func (f *FDB) Start(ctx context.Context) error {
 
 func (f *FDB) DbSize(_ context.Context) (int64, error) {
 	result, err := transact(f.db, 0, func(tr fdb.Transaction) (int64, error) {
-		return tr.GetEstimatedRangeSizeBytes(f.etcd).Get()
+		return tr.GetEstimatedRangeSizeBytes(f.dir).Get()
 	})
 	return result, err
 }
