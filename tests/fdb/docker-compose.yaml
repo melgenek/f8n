@@ -1,0 +1,25 @@
+services:
+  fdb-local:
+    container_name: fdb-local
+    image: ghcr.io/melgenek/f8n/foundationdb:7.3.69
+    ports:
+      - 4500:4500
+    environment:
+      FDB_NETWORKING_MODE: host
+    post_start:
+     - command: >
+        bash -c '
+          while [ ! -f /var/fdb/fdb.cluster ]; do
+            sleep 0.1
+          done
+          if ! fdbcli --exec status --timeout 3 ; then
+            echo "creating the database"
+            if ! fdbcli --exec "configure new single ssd ; status" --timeout 10 ; then
+                echo "Unable to configure new FDB cluster."
+                exit 1
+            elif ! fdbcli --exec "configure single ssd ; status" --timeout 10 ; then
+                echo "Unable to configure existing FDB cluster."
+                exit 1
+            fi
+          fi
+        '

@@ -1,0 +1,51 @@
+services:
+  fdb:
+    container_name: fdb
+    image: ghcr.io/melgenek/f8n/foundationdb:7.3.69
+    post_start:
+     - command: >
+        bash -c '
+          while [ ! -f /var/fdb/fdb.cluster ]; do
+            sleep 0.1
+          done
+          if ! fdbcli --exec status --timeout 3 ; then
+            echo "creating the database"
+            if ! fdbcli --exec "configure new single ssd ; status" --timeout 10 ; then
+                echo "Unable to configure new FDB cluster."
+                exit 1
+            elif ! fdbcli --exec "configure single ssd ; status" --timeout 10 ; then
+                echo "Unable to configure existing FDB cluster."
+                exit 1
+            fi
+          fi
+        '
+  f8n:
+    container_name: f8n
+    depends_on:
+      - fdb
+    build:
+      context: ./../..
+      dockerfile: Dockerfile
+    command:
+      - --endpoint
+      - "fdb://docker:docker@fdb:4500"
+  k3s:
+    container_name: k3s
+    depends_on:
+      - f8n
+    image: docker.io/rancher/k3s:v1.33.3-k3s1
+    privileged: true
+    command:
+      - server
+      - --kube-apiserver-arg=etcd-compaction-interval=10s
+      - --disable=coredns,servicelb,traefik,local-storage,metrics-server
+      - --kube-apiserver-arg=feature-gates=WatchList=true
+      - --disable-network-policy
+    environment:
+      K3S_DATASTORE_ENDPOINT: "http://f8n:2379"
+    volumes:
+      - kubeconfig:/etc/rancher/k3s
+
+volumes:
+  kubeconfig:
+    name: kubeconfig

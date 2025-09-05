@@ -47,9 +47,7 @@ type FDB struct {
 }
 
 func NewFdbStructured(connectionString string, dirName string) server.Backend {
-	if dirName == "" {
-		dirName = "etcd"
-	}
+	logrus.Infof("Creating FoundationDB driver with directory: '%s'", dirName)
 	ThisFDB = &FDB{
 		connectionString: connectionString,
 		dirName:          dirName,

@@ -5,9 +5,9 @@ import (
 )
 
 var (
-	Directory          string
-	CleanDirOnStart    bool
-	LogConflictingKeys bool
+	Directory          = "etcd"
+	CleanDirOnStart    = false
+	LogConflictingKeys = false
 
 	// For testing only
 	UseSequentialId = false

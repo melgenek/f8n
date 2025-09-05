@@ -6,9 +6,13 @@ build:
 		--target=multi-arch-package \
 		-t multi-arch-build:latest .
 
+.PHONY: start-fdb
+start-fdb:
+	docker compose -f tests/fdb/docker-compose.yaml up -d --force-recreate
+
 .PHONY: start-k3s
 start-k3s:
-	docker compose up -d --force-recreate --build
+	docker compose -f tests/k3s/docker-compose.yaml up -d --force-recreate --build
 	@bash -c '\
 	until docker exec k3s test -f /etc/rancher/k3s/k3s.yaml; do \
 		echo "Waiting for /etc/rancher/k3s/k3s.yaml..."; \
@@ -55,6 +59,3 @@ test-conformance-flaky:
 .PHONY: test-load
 test-load:
 	./tests/load/test.sh
-
-.PHONY: test-all
-test-all: test-load test-conformance

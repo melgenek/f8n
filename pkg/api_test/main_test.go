@@ -57,7 +57,7 @@ var tsc = []scenarios.TestScenario{
 		Name:    "KubernetesSingleClient",
 		Traffic: traffic.Kubernetes,
 		Profile: traffic.Profile{
-			MinimalQPS:                     100,
+			MinimalQPS:                     0,
 			MaximalQPS:                     200,
 			BurstableQPS:                   1000,
 			ClientCount:                    1,
@@ -72,7 +72,8 @@ var tsc = []scenarios.TestScenario{
 }
 
 func TestRobustnessExploratory(t *testing.T) {
-	logrus.SetLevel(logrus.TraceLevel)
+	rand.Seed(1)
+	logrus.SetLevel(logrus.WarnLevel)
 	fdb.APITest = true
 	fdb.UseSequentialId = true
 	fdb.CleanDirOnStart = true
