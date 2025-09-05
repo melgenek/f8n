@@ -19,9 +19,7 @@ import (
 )
 
 func TestFDB(t *testing.T) {
-	forceRetryTransaction = func(i int) bool { return false }
-
-	logrus.SetLevel(logrus.TraceLevel)
+	logrus.SetLevel(logrus.WarnLevel)
 	n := 4
 	sameKeyN := 3
 	f := NewFdbStructured("docker:docker@127.0.0.1:4500", "dir1")
@@ -30,6 +28,8 @@ func TestFDB(t *testing.T) {
 	require.NoError(t, err)
 	createRecords(t, f, ctx, 500, maxRecordSize) // fill up fdb
 	cancelCtx()
+
+	forceRetryTransaction = func(i int) bool { return i < 2 }
 
 	f = NewFdbStructured("docker:docker@127.0.0.1:4500", "dir2")
 	ctx, cancelCtx = context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
@@ -239,8 +239,8 @@ func TestFDB(t *testing.T) {
 }
 
 func TestFDBLargeRecords(t *testing.T) {
-	forceRetryTransaction = func(i int) bool { return false }
 	logrus.SetLevel(logrus.WarnLevel)
+	forceRetryTransaction = func(i int) bool { return i < 1 }
 
 	f := NewFdbStructured("docker:docker@127.0.0.1:4500", "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
@@ -321,6 +321,8 @@ func TestFDBLargeRecords(t *testing.T) {
 }
 
 func TestCompaction(t *testing.T) {
+	forceRetryTransaction = func(i int) bool { return i < 2 }
+
 	keyName := "/abc/key123"
 	value := []byte("val123")
 	newValue := []byte("newVal123")
@@ -452,7 +454,8 @@ func TestCompaction(t *testing.T) {
 }
 
 func TestWatchAll(t *testing.T) {
-	logrus.SetLevel(logrus.InfoLevel)
+	logrus.SetLevel(logrus.WarnLevel)
+	forceRetryTransaction = func(i int) bool { return i < 2 }
 
 	maxBatchSize = 10
 	recordsCount := 53

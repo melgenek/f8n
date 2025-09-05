@@ -163,7 +163,7 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 			} else if latestRevF, err := f.rev.GetLatestRev(&tr); err != nil {
 				return newModificationResultRev(zeroFuture, nil, false), err
 			} else {
-				return newModificationResultRev(latestRevF, &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), err
+				return newModificationResultRev(latestRevF, &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), nil
 			}
 		}
 
@@ -191,6 +191,7 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 }
 
 func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *server.KeyValue, bool, error) {
+	lastWriteUUID := createUUID()
 	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
 		if err := setFirstInBatch(&tr); err != nil {
 			return nil, err
@@ -201,7 +202,7 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
 
-		if lastRecord == nil || lastRecord.Value.IsDelete {
+		if lastRecord == nil {
 			if latestRevF, err := f.rev.GetLatestRev(&tr); err != nil {
 				return newModificationResultRev(zeroFuture, nil, false), err
 			} else {
@@ -214,8 +215,15 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
 
-		if revision != 0 && VersionstampToInt64(lastRecord.Key.Rev) != revision {
-			if latestRevF, err := f.rev.GetLatestRev(&tr); err != nil {
+		if lastRecord.Value.IsDelete || revision != 0 && VersionstampToInt64(lastRecord.Key.Rev) != revision {
+			if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
+				logrus.Tracef("Delete succeeded in the previous tr attempt '%s', latestRev=%+v", key, lastRecord.Key.Rev)
+				return newModificationResultRev(
+					ConstInt64Future{VersionstampToInt64(lastRecord.Key.Rev)},
+					&RevRecord{Rev: lastRecord.Key.Rev, Record: record},
+					true,
+				), nil
+			} else if latestRevF, err := f.rev.GetLatestRev(&tr); err != nil {
 				return newModificationResultRev(zeroFuture, nil, false), err
 			} else {
 				return newModificationResultRev(latestRevF, &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), nil
@@ -232,23 +240,17 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 			PrevRevision:   lastRecord.Key.Rev,
 		}
 
-		keyFuture, _, err := f.append(&tr, deleteRecord)
+		keyFuture, uuid, err := f.append(&tr, deleteRecord)
 		if err != nil {
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
+		lastWriteUUID = uuid
 		return newModificationResultKey(keyFuture, &RevRecord{Record: deleteRecord}, true), nil
 	})
 	if err != nil {
 		return 0, nil, false, err
 	}
 	return res.getResult()
-}
-
-func setFirstInBatch(tr *fdb.Transaction) error {
-	// Make sure that there is only one write per commit batch, so that commit version is unique.
-	// https://forums.foundationdb.org/t/possible-to-create-a-unique-increasing-8-byte-sequence-with-versionstamps/1640/8
-	// https://github.com/apple/foundationdb/blob/e872b35cd279df0420fc3fd5e3734e54156a829d/fdbclient/vexillographer/fdb.options#L324-L326
-	return setTransactionOption(tr.Options(), 710, nil)
 }
 
 func (f *FDB) append(tr *fdb.Transaction, record *Record) (fdb.FutureKey, tuple.UUID, error) {

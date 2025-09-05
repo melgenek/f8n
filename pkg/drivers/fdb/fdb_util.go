@@ -186,3 +186,10 @@ func panicToError(e *error) {
 		}
 	}
 }
+
+func setFirstInBatch(tr *fdb.Transaction) error {
+	// Make sure that there is only one write per commit batch, so that commit version is unique.
+	// https://forums.foundationdb.org/t/possible-to-create-a-unique-increasing-8-byte-sequence-with-versionstamps/1640/8
+	// https://github.com/apple/foundationdb/blob/e872b35cd279df0420fc3fd5e3734e54156a829d/fdbclient/vexillographer/fdb.options#L324-L326
+	return setTransactionOption(tr.Options(), 710, nil)
+}
