@@ -18,14 +18,8 @@ jobs:
       - name: Set up Docker Compose
         uses: docker/setup-compose-action@v1
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-
-      - name: Start FDB
-        run: make start-fdb
-
-      - name: Go tests
-        run: go test -v ./...
+      - name: Run tests
+        run: make run-tests
 
       - name: Start K3S
         run: make start-k3s

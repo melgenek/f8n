@@ -6,6 +6,7 @@ import (
 	"go.etcd.io/etcd/pkg/v3/proxy"
 	"go.etcd.io/etcd/tests/v3/framework/config"
 	"go.etcd.io/etcd/tests/v3/framework/e2e"
+	"k8s.io/utils/env"
 	"time"
 )
 
@@ -23,7 +24,7 @@ func NewFDBEtcdProcess() (*FDBEtcdProcess, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := endpoint.Config{
 		Listener:            "0.0.0.0:2379",
-		Endpoint:            "fdb://docker:docker@127.0.0.1:4500",
+		Endpoint:            "fdb://" + env.GetString("FDB_CONNECTION_STRING", "docker:docker@127.0.0.1:4500"),
 		NotifyInterval:      NotifyInterval,
 		EmulatedETCDVersion: "3.5.13",
 	}

@@ -3,12 +3,12 @@ PLATFORMS = linux/arm64
 build:
 	docker buildx build --progress=plain \
 		--platform=$(PLATFORMS) \
-		--target=multi-arch-package \
-		-t multi-arch-build:latest .
+		--target=package \
+		-t f8n:latest .
 
-.PHONY: start-fdb
-start-fdb:
-	docker compose -f tests/fdb/docker-compose.yaml up -d --force-recreate
+.PHONY: run-tests
+run-tests:
+	docker compose -f tests/fdb/docker-compose.yaml up --build --exit-code-from tests --abort-on-container-exit
 
 .PHONY: start-k3s
 start-k3s:

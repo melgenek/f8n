@@ -1,11 +1,7 @@
 services:
-  fdb-local:
-    container_name: fdb-local
+  fdb-test:
+    container_name: fdb-test
     image: ghcr.io/melgenek/f8n/foundationdb:7.3.69
-    ports:
-      - 4500:4500
-    environment:
-      FDB_NETWORKING_MODE: host
     post_start:
      - command: >
         bash -c '
@@ -23,3 +19,12 @@ services:
             fi
           fi
         '
+  tests:
+    image: golang:1.24
+    build:
+      context: ./../..
+      dockerfile: Dockerfile
+      target: base
+    environment:
+      FDB_CONNECTION_STRING: "docker:docker@fdb-test:4500"
+    command: go test ./...

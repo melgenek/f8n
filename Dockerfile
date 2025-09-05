@@ -1,8 +1,8 @@
 # --- xx tool stage ---
-FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
+FROM tonistiigi/xx AS xx
 
 # --- multi-arch build stage ---
-FROM --platform=$BUILDPLATFORM golang:1.24-bookworm AS build
+FROM golang:1.24-bookworm AS base
 COPY --from=xx / /
 ARG TAG
 ARG TARGETOS
@@ -28,6 +28,7 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
     && wget "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_${FDB_ARCH}.deb" \
     && dpkg -i foundationdb-clients_${FDB_VERSION}-1_${FDB_ARCH}.deb
 
+FROM base as build
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     CGO_CFLAGS="-DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_USE_ALLOCA=1" xx-go build -ldflags "-extldflags -s" -o bin/f8n
 
@@ -41,7 +42,7 @@ RUN apt-get update && apt-get install -y wget tar gzip && rm -rf /var/lib/apt/li
        elif [ "${TARGETARCH}" = "arm64" ]; then \
          ARCH=arm64; \
        else \
-         echo "Unsupported arch ${TARGETARCH}"; exit 1; \
+         echo "Unsupported arch '${TARGETARCH}'"; exit 1; \
        fi \
     && wget -q https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-${ARCH}.tar.gz \
     && tar xzf etcd-v${ETCD_VERSION}-linux-${ARCH}.tar.gz \

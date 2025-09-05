@@ -92,17 +92,13 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 			PrevRevision:   dummyVersionstamp,
 		}
 		if lastRecord != nil {
-			if lastRecord.Value.IsCreate {
-				if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
-					logrus.Tracef("Create succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
-					return newModificationResultRev(
-						ConstInt64Future{VersionstampToInt64(lastRecord.Key.Rev)},
-						nil,
-						true,
-					), err
-				} else {
-					return newModificationResultRev(zeroFuture, nil, false), server.ErrKeyExists
-				}
+			if lastRecord.Value.IsCreate && bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
+				logrus.Tracef("Create succeeded in the previous tr attempt '%s', rev=%+v", key, lastRecord.Key.Rev)
+				return newModificationResultRev(
+					ConstInt64Future{VersionstampToInt64(lastRecord.Key.Rev)},
+					nil,
+					true,
+				), err
 			} else if !lastRecord.Value.IsDelete {
 				logrus.Tracef("The key '%s' already exists, prevRev=%+v", key, lastRecord.Key.Rev)
 				return newModificationResultRev(zeroFuture, nil, false), server.ErrKeyExists
@@ -215,7 +211,7 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 			return newModificationResultRev(zeroFuture, nil, false), err
 		}
 
-		if lastRecord.Value.IsDelete || revision != 0 && VersionstampToInt64(lastRecord.Key.Rev) != revision {
+		if lastRecord.Value.IsDelete {
 			if bytes.Equal(lastWriteUUID[:], lastRecord.Value.WriteUUID[:]) {
 				logrus.Tracef("Delete succeeded in the previous tr attempt '%s', latestRev=%+v", key, lastRecord.Key.Rev)
 				return newModificationResultRev(
@@ -224,6 +220,14 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 					true,
 				), nil
 			} else if latestRevF, err := f.rev.GetLatestRev(&tr); err != nil {
+				return newModificationResultRev(zeroFuture, nil, false), err
+			} else {
+				return newModificationResultRev(latestRevF, nil, false), nil
+			}
+		}
+
+		if revision != 0 && VersionstampToInt64(lastRecord.Key.Rev) != revision {
+			if latestRevF, err := f.rev.GetLatestRev(&tr); err != nil {
 				return newModificationResultRev(zeroFuture, nil, false), err
 			} else {
 				return newModificationResultRev(latestRevF, &RevRecord{Rev: lastRecord.Key.Rev, Record: record}, false), nil

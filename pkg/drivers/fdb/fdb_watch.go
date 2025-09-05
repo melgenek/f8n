@@ -73,16 +73,22 @@ func (f *FDB) Watch(ctx context.Context, prefix string, minRevision int64) serve
 			result <- afterResult.events
 		}
 
-		for events := range readChan {
-			//skip events that have already been sent in the initial batch
-			for len(events) > 0 && events[0].KV.ModRevision <= lastRevision {
-				events = events[1:]
-			}
-
-			if len(events) > 0 {
-				result <- events
+		readMore := true
+		for readMore {
+			select {
+			case events := <-readChan:
+				//skip events that have already been sent in the initial batch
+				for len(events) > 0 && events[0].KV.ModRevision <= lastRevision {
+					events = events[1:]
+				}
+				if len(events) > 0 {
+					result <- events
+				}
+			case <-ctx.Done():
+				readMore = false
 			}
 		}
+
 		close(result)
 		cancel()
 	}()
@@ -150,15 +156,15 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 		}
 
 		var events []*server.Event
-		var rev int64
+		var lastRev int64
 		currentRev := f.lastWatchRev.Load()
-		logrus.Tracef("POLLING latestRev=%d", currentRev)
-		for rev, events, err = f.afterBatch(currentRev, func(s string) bool { return true }); err != nil; {
+		logrus.Tracef("POLLING lastRev=%d", currentRev)
+		for lastRev, events, err = f.afterBatch(currentRev, func(s string) bool { return true }); err != nil; {
 			logrus.Errorf("Error in 'afterBatch' err=%v", err)
 		}
-		logrus.Tracef("AFTER POLL latestRev=%d => res=%v err=%v", currentRev, len(events), err)
+		logrus.Tracef("AFTER POLL lastRev=%d => res=%v err=%v", currentRev, len(events), err)
 		for _, event := range events {
-			logrus.Tracef("AFTER POLL EVENT key=%s create=%v delete=%v latestRev=%d", event.KV.Key, event.Create, event.Delete, event.KV.ModRevision)
+			logrus.Tracef("AFTER POLL EVENT key=%s create=%v delete=%v lastRev=%d", event.KV.Key, event.Create, event.Delete, event.KV.ModRevision)
 		}
 
 		if len(events) > 0 {
@@ -171,7 +177,7 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 		if len(events) > 0 {
 			f.lastWatchRev.Store(events[len(events)-1].KV.ModRevision)
 		} else {
-			f.lastWatchRev.Store(rev)
+			f.lastWatchRev.Store(lastRev)
 		}
 	}
 }
