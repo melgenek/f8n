@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"golang.org/x/sync/errgroup"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -18,8 +19,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFDB(t *testing.T) {
+func TestMain(m *testing.M) {
+	CleanDirOnStart = true
 	logrus.SetLevel(logrus.WarnLevel)
+	forceRetryTransaction = func(i int) bool { return i < 2 }
+
+	code := m.Run()
+
+	CleanDirOnStart = false
+	os.Exit(code)
+}
+
+func TestFDB(t *testing.T) {
 	n := 4
 	sameKeyN := 3
 	f := NewFdbStructured("docker:docker@127.0.0.1:4500", "dir1")
@@ -239,7 +250,6 @@ func TestFDB(t *testing.T) {
 }
 
 func TestFDBLargeRecords(t *testing.T) {
-	logrus.SetLevel(logrus.WarnLevel)
 	forceRetryTransaction = func(i int) bool { return i < 1 }
 
 	f := NewFdbStructured("docker:docker@127.0.0.1:4500", "dir1")
@@ -454,7 +464,6 @@ func TestCompaction(t *testing.T) {
 }
 
 func TestWatchAll(t *testing.T) {
-	logrus.SetLevel(logrus.WarnLevel)
 	forceRetryTransaction = func(i int) bool { return i < 2 }
 
 	maxBatchSize = 10

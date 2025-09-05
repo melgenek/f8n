@@ -12,8 +12,6 @@ const (
 	// https://apple.github.io/foundationdb/api-error-codes.html
 	notCommittedErrorCode = 1020 // Transaction not committed due to conflict with another transaction
 
-	logConflictingKeys = false
-
 	splitRangeAfterDuration  = 1 * time.Second
 	transactionTimeout       = 10 * time.Second
 	transactionMaxRetryCount = 1000
@@ -112,7 +110,7 @@ func transact[T any](d fdb.Database, defaultValue T, f func(fdb.Transaction) (T,
 			return defaultValue, fmt.Errorf("failed to set timeout limit: %w", e)
 		}
 
-		if logConflictingKeys {
+		if LogConflictingKeys {
 			e = tr.Options().SetReportConflictingKeys()
 			if e != nil {
 				return defaultValue, fmt.Errorf("failed to set conflicint keys option: %w", e)
@@ -125,7 +123,7 @@ func transact[T any](d fdb.Database, defaultValue T, f func(fdb.Transaction) (T,
 			e = tr.Commit().Get()
 		}
 
-		if logConflictingKeys {
+		if LogConflictingKeys {
 			var fe fdb.Error
 			if errors.As(e, &fe) && fe.Code == notCommittedErrorCode {
 				//https://forums.foundationdb.org/t/unable-to-use-conflicting-keys-special-keyspace-with-go-bindings/3097/3

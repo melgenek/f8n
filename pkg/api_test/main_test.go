@@ -75,6 +75,7 @@ func TestRobustnessExploratory(t *testing.T) {
 	logrus.SetLevel(logrus.TraceLevel)
 	fdb.APITest = true
 	fdb.UseSequentialId = true
+	fdb.CleanDirOnStart = true
 	for _, scenario := range tsc {
 		t.Run(scenario.Name, func(t *testing.T) {
 			logger := zaptest.NewLogger(t)

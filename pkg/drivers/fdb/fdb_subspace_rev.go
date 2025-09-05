@@ -7,8 +7,6 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 )
 
-var UseSequentialId = false
-
 type RevisionSubspace struct {
 	subspace subspace.Subspace
 }

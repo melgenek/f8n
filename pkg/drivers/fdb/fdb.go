@@ -24,7 +24,7 @@ func init() {
 
 func New(_ context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
 	logrus.Info("New FDB backend")
-	return false, NewFdbStructured(cfg.DataSourceName, "etcd"), nil
+	return false, NewFdbStructured(cfg.DataSourceName, Directory), nil
 }
 
 type FDB struct {
@@ -47,6 +47,9 @@ type FDB struct {
 }
 
 func NewFdbStructured(connectionString string, dirName string) server.Backend {
+	if dirName == "" {
+		dirName = "etcd"
+	}
 	ThisFDB = &FDB{
 		connectionString: connectionString,
 		dirName:          dirName,
@@ -73,11 +76,12 @@ func (f *FDB) Start(ctx context.Context) error {
 	}
 	f.dir = etcd
 
-	// todo don't clear on startup
-	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-		tr.ClearRange(etcd)
-		return
-	})
+	if CleanDirOnStart {
+		_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
+			tr.ClearRange(etcd)
+			return
+		})
+	}
 
 	if err != nil {
 		return err

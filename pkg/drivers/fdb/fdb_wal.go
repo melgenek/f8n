@@ -6,8 +6,6 @@ import (
 	"math"
 )
 
-var APITest = false
-
 func (f *FDB) ReadWAL() ([]*RevRecord, error) {
 	collector := newWalCollector(f)
 	begin, end := f.byRevision.GetSubspace().FDBRangeKeySelectors()
