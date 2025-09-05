@@ -64,9 +64,6 @@ var tsc = []scenarios.TestScenario{
 			MaxNonUniqueRequestConcurrency: 3,
 			ForbidCompaction:               true,
 		},
-		Watch: client.WatchConfig{
-			RequestProgress: true,
-		},
 		Failpoint: forkedFailpoint.DummyFailpoint{},
 	},
 }

@@ -108,8 +108,7 @@ func (w *watcher) Start(ctx context.Context, r *etcdserverpb.WatchCreateRequest)
 			return
 		}
 
-		ctxWithWatchId := context.WithValue(ctx, "watchId", id)
-		wr := w.backend.Watch(ctxWithWatchId, key, startRevision)
+		wr := w.backend.Watch(ctx, key, startRevision)
 
 		// If the watch result has a non-zero CompactRevision, then the watch request failed due to
 		// the requested start revision having been compacted.  Pass the current and and compact
@@ -273,8 +272,7 @@ func (w *watcher) Progress(ctx context.Context) {
 
 	// If all watchers are synced, send a broadcast progress notification with the latest revision.
 	id := int64(clientv3.InvalidWatchID)
-	ctxWithRev := context.WithValue(ctx, "watchId", int64(clientv3.InvalidWatchID))
-	rev, err := w.backend.CurrentRevision(ctxWithRev)
+	rev, err := w.backend.CurrentRevision(ctx)
 	if err != nil {
 		logrus.Errorf("Failed to get current revision for ProgressNotify: %v", err)
 		return
@@ -287,29 +285,17 @@ func (w *watcher) Progress(ctx context.Context) {
 // ProgressIfSynced sends a progress report on any channels that are synced and blocked on the outer loop
 func (w *watcher) ProgressIfSynced(ctx context.Context) (bool, error) {
 	logrus.Tracef("WATCH PROGRESS TICK")
+	revision, err := w.backend.CurrentRevision(ctx)
+	if err != nil {
+		logrus.Errorf("Failed to get current revision for ProgressNotify: %v", err)
+		return false, nil
+	}
+
 	w.RLock()
 	defer w.RUnlock()
 
-	// All synced watchers will be blocked in the outer loop and able to receive on the progress channel.
-	// If any cannot be sent to, then it is not synced and has pending events to be sent.
-	// Send revision 0, as we don't actually want the watchers to send a progress response if they do receive.
-	for id, progressCh := range w.progress {
-		select {
-		case progressCh <- 0:
-		default:
-			logrus.Tracef("WATCH SEND PROGRESS FAILED NOT SYNCED id=%d ", id)
-			return false, nil
-		}
-	}
-
 	// Send revision to all synced channels
-	for id, progressCh := range w.progress {
-		contextWithRev := context.WithValue(ctx, "watchId", id)
-		revision, err := w.backend.CurrentRevision(contextWithRev)
-		if err != nil {
-			logrus.Errorf("Failed to get current revision for ProgressNotify: %v", err)
-			return false, nil
-		}
+	for _, progressCh := range w.progress {
 		select {
 		case progressCh <- revision:
 		default:

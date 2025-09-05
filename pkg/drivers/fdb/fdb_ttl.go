@@ -2,7 +2,6 @@ package fdb
 
 import (
 	"context"
-	"fmt"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
 	"k8s.io/client-go/util/workqueue"
@@ -139,7 +138,8 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 
 		wr := f.Watch(ctx, "/", rev)
 		if wr.CompactRevision != 0 {
-			panic(fmt.Errorf("TTL event watch failed: %v", server.ErrCompacted))
+			logrus.Errorf("TTL event watch failed: %v", server.ErrCompacted)
+			return
 		}
 		for events := range wr.Events {
 			for _, event := range events {
