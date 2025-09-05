@@ -17,12 +17,12 @@ package model
 import (
 	"cmp"
 	"fmt"
+	"github.com/anishathalye/porcupine"
+	gocmp "github.com/google/go-cmp/cmp"
 	"go.etcd.io/etcd/tests/v3/robustness/model"
 	"reflect"
 	"slices"
 	"strings"
-
-	"github.com/anishathalye/porcupine"
 )
 
 // NonDeterministicModel extends DeterministicModel to allow for clients with imperfect knowledge of request destiny.
@@ -148,7 +148,8 @@ func (states nonDeterministicState) applyRequestWithResponse(request model.EtcdR
 		if model.Match(modelResponse, model.MaybeEtcdResponse{EtcdResponse: response}) {
 			newStates = append(newStates, newState)
 		} else {
-			fmt.Printf("MISMATCH:\nREQUEST: %s\nREAL: %+v %v\nMODEL: %+v %v\nSTATE: %s\n\n", describeEtcdRequest(request), response.Txn, response.Revision, modelResponse.Txn, modelResponse.Revision, describeEtcdState(s))
+			diff := gocmp.Diff(modelResponse, model.MaybeEtcdResponse{EtcdResponse: response})
+			fmt.Printf("MISMATCH:\nREQUEST: %s\nREAL: %+v %v\nMODEL: %+v %v\nSTATE: %s\nDIFF: %s\n\n", describeEtcdRequest(request), response.Txn, response.Revision, modelResponse.Txn, modelResponse.Revision, describeEtcdState(s), diff)
 		}
 	}
 	return newStates

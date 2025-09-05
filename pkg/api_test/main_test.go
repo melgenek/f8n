@@ -53,17 +53,8 @@ var (
 )
 
 var tsc = []scenarios.TestScenario{
-	//{
-	//	Name:    "KubernetesLowTraffic",
-	//	Traffic: traffic.Kubernetes,
-	//	Profile: traffic.LowTraffic,
-	//	Watch: client.WatchConfig{
-	//		RequestProgress: true,
-	//	},
-	//	Failpoint: forkedFailpoint.DummyFailpoint{},
-	//},
 	{
-		Name:    "KubernetesLowTraffic",
+		Name:    "KubernetesSingleClient",
 		Traffic: traffic.Kubernetes,
 		Profile: traffic.Profile{
 			MinimalQPS:                     100,
@@ -81,7 +72,6 @@ var tsc = []scenarios.TestScenario{
 }
 
 func TestRobustnessExploratory(t *testing.T) {
-	rand.Seed(1)
 	logrus.SetLevel(logrus.TraceLevel)
 	fdb.CorrectnessTesting = true
 	fdb.UseSequentialId = true
