@@ -1,6 +1,6 @@
 services:
-  fdb:
-    container_name: fdb
+  fdb-demo:
+    container_name: fdb-demo
     image: ghcr.io/melgenek/f8n/foundationdb:7.3.69
     post_start:
      - command: >
@@ -19,20 +19,18 @@ services:
             fi
           fi
         '
-  f8n:
-    container_name: f8n
-    depends_on:
-      - fdb
-    build:
-      context: .
-      dockerfile: Dockerfile
+  f8n-demo:
+    container_name: f8n-demo
+    image: ghcr.io/melgenek/f8n:v0.1.0
     command:
       - --endpoint
-      - "fdb://docker:docker@fdb:4500"
-  k3s:
-    container_name: k3s
+      - "fdb://docker:docker@fdb-demo:4500"
+      - --dir
+      - "demo"
+  k3s-demo:
+    container_name: k3s-demo
     depends_on:
-      - f8n
+      - f8n-demo
     image: docker.io/rancher/k3s:v1.33.3-k3s1
     privileged: true
     command:
@@ -42,10 +40,4 @@ services:
       - --kube-apiserver-arg=feature-gates=WatchList=true
       - --disable-network-policy
     environment:
-      K3S_DATASTORE_ENDPOINT: "http://f8n:2379"
-    volumes:
-      - kubeconfig:/etc/rancher/k3s
-
-volumes:
-  kubeconfig:
-    name: kubeconfig
+      K3S_DATASTORE_ENDPOINT: "http://f8n-demo:2379"
