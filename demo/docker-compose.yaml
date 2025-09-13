@@ -25,7 +25,7 @@ services:
     command:
       - --endpoint
       - "fdb://docker:docker@fdb-demo:4500"
-      - --dir
+      - --fdb-directory
       - "demo"
   k3s-demo:
     container_name: k3s-demo

@@ -47,7 +47,7 @@ type FDB struct {
 }
 
 func NewFdbStructured(connectionString string, dirName string) server.Backend {
-	logrus.Infof("Creating FoundationDB driver with directory: '%s'", dirName)
+	logrus.Infof("Creating a FoundationDB driver with directory: '%s'", dirName)
 	ThisFDB = &FDB{
 		connectionString: connectionString,
 		dirName:          dirName,
@@ -62,7 +62,17 @@ func (f *FDB) Start(ctx context.Context) error {
 	fdb.MustAPIVersion(730)
 	f.ctx = ctx
 
-	db, err := fdb.OpenWithConnectionString(f.connectionString)
+	if err := setTLSConfig(); err != nil {
+		return err
+	}
+
+	var db fdb.Database
+	var err error
+	if f.connectionString != "" {
+		db, err = fdb.OpenWithConnectionString(f.connectionString)
+	} else {
+		db, err = fdb.OpenDefault()
+	}
 	if err != nil {
 		return err
 	}
@@ -101,6 +111,36 @@ func (f *FDB) Start(ctx context.Context) error {
 	}
 	go f.ttl(ctx)
 
+	logrus.Info("Started the FoundationDB driver")
+	return nil
+}
+
+func setTLSConfig() error {
+	if TLSCertificateFile != "" {
+		if err := fdb.Options().SetTLSCertPath(TLSCertificateFile); err != nil {
+			return err
+		}
+	}
+	if TLSKeyFile != "" {
+		if err := fdb.Options().SetTLSKeyPath(TLSKeyFile); err != nil {
+			return err
+		}
+	}
+	if TLSPassword != "" {
+		if err := fdb.Options().SetTLSPassword(TLSPassword); err != nil {
+			return err
+		}
+	}
+	if TLSCAFile != "" {
+		if err := fdb.Options().SetTLSCaPath(TLSCAFile); err != nil {
+			return err
+		}
+	}
+	if TLSVerifyPeers != "" {
+		if err := fdb.Options().SetTLSVerifyPeers([]byte(TLSVerifyPeers)); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

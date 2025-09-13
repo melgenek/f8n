@@ -2,6 +2,17 @@ services:
   fdb:
     container_name: fdb
     image: ghcr.io/melgenek/f8n/foundationdb:7.3.69
+    environment:
+      FDB_TLS_CERTIFICATE_FILE: /opt/fdb/tls/server-certificate.pem
+      FDB_TLS_KEY_FILE: /opt/fdb/tls/server-private-key.pem
+      FDB_TLS_PASSWORD: server_password
+      FDB_TLS_CA_FILE: /opt/fdb/tls/ca-certificate.pem
+      FDB_TLS_VERIFY_PEERS: "Check.Valid=1"
+    volumes:
+      - ./fdb_pki:/opt/fdb/tls:ro
+      - ./fdb.bash:/opt/fdb/fdb.bash:ro
+    # https://github.com/apple/foundationdb/blob/main/packaging/docker/Dockerfile#L200
+    entrypoint: ["/usr/bin/tini", "-g", "--", "/opt/fdb/fdb.bash"]
     post_start:
      - command: >
         bash -c '
@@ -26,9 +37,21 @@ services:
     build:
       context: ./../..
       dockerfile: Dockerfile
+    volumes:
+      - ./fdb_pki:/opt/fdb/tls:ro
     command:
       - --endpoint
-      - "fdb://docker:docker@fdb:4500"
+      - "fdb://docker:docker@fdb:4500:tls"
+      - --fdb-tls-certificate-file
+      - "/opt/fdb/tls/client-certificate.pem"
+      - --fdb-tls-key-file
+      - "/opt/fdb/tls/client-private-key.pem"
+      - --fdb-tls-password
+      - "client_password"
+      - --fdb-tls-ca-file
+      - "/opt/fdb/tls/ca-certificate.pem"
+      - --fdb-tls-verify-peers
+      - "Check.Valid=1"
   k3s:
     container_name: k3s
     depends_on:

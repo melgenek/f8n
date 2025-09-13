@@ -1,0 +1,16 @@
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+
+[req_distinguished_name]
+countryName_default = US
+stateOrProvinceName_default = California
+localityName_default = San Francisco
+organizationName_default = My Organization
+organizationalUnitName_default = IT
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = fdb
