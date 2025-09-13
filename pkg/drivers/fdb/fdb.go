@@ -49,7 +49,7 @@ type FDB struct {
 }
 
 func NewFdbStructured(connectionString string, tlsConfig tls.Config, dirName string) server.Backend {
-	logrus.Infof("Creating a FoundationDB driver with directory: '%s'", dirName)
+	logrus.Infof("Creating a FoundationDB backend with directory: '%s'", dirName)
 	ThisFDB = &FDB{
 		connectionString: connectionString,
 		tlsConfig:        tlsConfig,
@@ -114,7 +114,7 @@ func (f *FDB) Start(ctx context.Context) error {
 	}
 	go f.ttl(ctx)
 
-	logrus.Info("Started the FoundationDB driver")
+	logrus.Info("Started the FoundationDB backend")
 	return nil
 }
 

@@ -22,18 +22,21 @@ The implementation:
 F8N is a drop-in replacement for ETCD. 
 Images are published at [ghcr.io/melgenek/f8n](https://github.com/melgenek/f8n/pkgs/container/f8n/versions?filters%5Bversion_type%5D=tagged):
 ```
-docker pull ghcr.io/melgenek/f8n:v0.1.0
+docker pull ghcr.io/melgenek/f8n:v0.3.0
 ```
 
 Run the F8N image as a container and configure your API server to connect to it instead of ETCD with `--etcd-servers`.
+
+For a full mTLS example, see the `demo/tls` folder.
+Docs are available in the [docs](docs) directory.
 
 ## Demo
 
 Spin up FoundationDB, F8N, and K3s with Docker:
 
-1. The demo is in the `demo` folder:
+1. The demos are in the `demo` folder:
 ```
-cd demo
+cd demo/simple
 ```
 
 2. Start docker compose:

@@ -1,0 +1,74 @@
+services:
+  fdb-demo:
+    container_name: fdb-demo
+    image: ghcr.io/melgenek/f8n/foundationdb:7.3.69
+    environment:
+      FDB_TLS_CERTIFICATE_FILE: /opt/fdb/tls/server-certificate.pem
+      FDB_TLS_KEY_FILE: /opt/fdb/tls/server-private-key.pem
+      FDB_TLS_CA_FILE: /opt/fdb/tls/ca-certificate.pem
+      FDB_TLS_VERIFY_PEERS: "Check.Valid=1"
+    volumes:
+      - ./fdb_pki:/opt/fdb/tls:ro
+      - ./fdb.bash:/opt/fdb/fdb.bash:ro
+    # https://github.com/apple/foundationdb/blob/main/packaging/docker/Dockerfile#L200
+    entrypoint: [ "/usr/bin/tini", "-g", "--", "/opt/fdb/fdb.bash" ]
+    post_start:
+     - command: >
+        bash -c '
+          while [ ! -f /var/fdb/fdb.cluster ]; do
+            sleep 0.1
+          done
+          if ! fdbcli --exec status --timeout 3 ; then
+            echo "creating the database"
+            if ! fdbcli --exec "configure new single ssd ; status" --timeout 10 ; then
+                echo "Unable to configure new FDB cluster."
+                exit 1
+            elif ! fdbcli --exec "configure single ssd ; status" --timeout 10 ; then
+                echo "Unable to configure existing FDB cluster."
+                exit 1
+            fi
+          fi
+        '
+  f8n-demo:
+    container_name: f8n-demo
+    image: ghcr.io/melgenek/f8n:v0.3.0
+    environment:
+      FDB_NETWORK_OPTION_TRACE_ENABLE: "/tmp"
+      FDB_NETWORK_OPTION_TRACE_FORMAT: "json"
+    volumes:
+      - ./fdb_pki:/opt/fdb/tls:ro
+      - ./etcd_pki:/opt/etcd/tls:ro
+    command:
+      - --endpoint
+      - "fdb://docker:docker@fdb-demo:4500:tls"
+      # FDB client TLS
+      - --cert-file
+      - "/opt/fdb/tls/client-certificate.pem"
+      - --key-file
+      - "/opt/fdb/tls/client-private-key.pem"
+      - --ca-file
+      - "/opt/fdb/tls/ca-certificate.pem"
+      # ETCD server TLS
+      - --server-cert-file
+      - "/opt/etcd/tls/server-certificate.pem"
+      - --server-key-file
+      - "/opt/etcd/tls/server-private-key.pem"
+  k3s-demo:
+    container_name: k3s-demo
+    depends_on:
+      - f8n-demo
+    image: docker.io/rancher/k3s:v1.33.3-k3s1
+    privileged: true
+    command:
+      - server
+      - --kube-apiserver-arg=etcd-compaction-interval=10s
+      - --disable=coredns,servicelb,traefik,local-storage,metrics-server
+      - --kube-apiserver-arg=feature-gates=WatchList=true
+      - --disable-network-policy
+    volumes:
+      - ./etcd_pki:/opt/etcd/tls:ro
+    environment:
+      K3S_DATASTORE_ENDPOINT: "https://f8n-demo:2379"
+      K3S_DATASTORE_CAFILE: "/opt/etcd/tls/ca-certificate.pem"
+      K3S_DATASTORE_CERTFILE: "/opt/etcd/tls/client-certificate.pem"
+      K3S_DATASTORE_KEYFILE: "/opt/etcd/tls/client-private-key.pem"

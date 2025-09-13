@@ -21,12 +21,9 @@ services:
         '
   f8n-demo:
     container_name: f8n-demo
-    image: ghcr.io/melgenek/f8n:v0.1.0
-    command:
-      - --endpoint
-      - "fdb://docker:docker@fdb-demo:4500"
-      - --fdb-directory
-      - "demo"
+    image: ghcr.io/melgenek/f8n:v0.2.0
+    volumes:
+      - ./fdb.cluster:/etc/foundationdb/fdb.cluster:ro
   k3s-demo:
     container_name: k3s-demo
     depends_on:
