@@ -70,5 +70,3 @@ services:
     environment:
       K3S_DATASTORE_ENDPOINT: "https://f8n-demo:2379"
       K3S_DATASTORE_CAFILE: "/opt/etcd/tls/ca-certificate.pem"
-      K3S_DATASTORE_CERTFILE: "/opt/etcd/tls/client-certificate.pem"
-      K3S_DATASTORE_KEYFILE: "/opt/etcd/tls/client-private-key.pem"
