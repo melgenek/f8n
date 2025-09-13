@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"github.com/k3s-io/kine/pkg/tls"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"golang.org/x/sync/errgroup"
@@ -36,7 +37,7 @@ func TestMain(m *testing.M) {
 func TestFDB(t *testing.T) {
 	n := 4
 	sameKeyN := 3
-	f := NewFdbStructured(connectionString,, "dir1")
+	f := NewFdbStructured(connectionString, tls.Config{}, "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	err := f.Start(ctx)
 	require.NoError(t, err)
@@ -45,7 +46,7 @@ func TestFDB(t *testing.T) {
 
 	forceRetryTransaction = func(i int) bool { return i < 2 }
 
-	f = NewFdbStructured(connectionString,, "dir2")
+	f = NewFdbStructured(connectionString, tls.Config{}, "dir2")
 	ctx, cancelCtx = context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancelCtx()
 	err = f.Start(ctx)
@@ -255,7 +256,7 @@ func TestFDB(t *testing.T) {
 func TestFDBLargeRecords(t *testing.T) {
 	forceRetryTransaction = func(i int) bool { return i < 1 }
 
-	f := NewFdbStructured(connectionString,, "dir1")
+	f := NewFdbStructured(connectionString, tls.Config{}, "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
 	defer cancelCtx()
 
@@ -341,7 +342,7 @@ func TestCompaction(t *testing.T) {
 	newValue := []byte("newVal123")
 	updatedLease := int64(123)
 
-	f := NewFdbStructured(connectionString,, "dir1")
+	f := NewFdbStructured(connectionString, tls.Config{}, "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(20)*time.Second)
 	defer cancelCtx()
 
@@ -472,7 +473,7 @@ func TestWatchAll(t *testing.T) {
 	maxBatchSize = 10
 	recordsCount := 53
 
-	f := NewFdbStructured(connectionString,, "dir1")
+	f := NewFdbStructured(connectionString, tls.Config{}, "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
 	defer cancelCtx()
 
@@ -502,7 +503,7 @@ func TestExceedSizeLarge(t *testing.T) {
 	_, err := rand.Read(value)
 	require.NoError(t, err)
 
-	f := NewFdbStructured(connectionString,, "dir1")
+	f := NewFdbStructured(connectionString, tls.Config{}, "dir1")
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
 	defer cancelCtx()
 
