@@ -39,19 +39,17 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./fdb_pki:/opt/fdb/tls:ro
+    environment:
+      FDB_TLS_PASSWORD: client_password
     command:
       - --endpoint
       - "fdb://docker:docker@fdb:4500:tls"
-      - --fdb-tls-certificate-file
+      - --cert-file
       - "/opt/fdb/tls/client-certificate.pem"
-      - --fdb-tls-key-file
+      - --key-file
       - "/opt/fdb/tls/client-private-key.pem"
-      - --fdb-tls-password
-      - "client_password"
-      - --fdb-tls-ca-file
+      - --ca-file
       - "/opt/fdb/tls/ca-certificate.pem"
-      - --fdb-tls-verify-peers
-      - "Check.Valid=1"
   k3s:
     container_name: k3s
     depends_on:

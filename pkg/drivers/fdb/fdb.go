@@ -8,6 +8,7 @@ import (
 	"github.com/k3s-io/kine/pkg/broadcaster"
 	"github.com/k3s-io/kine/pkg/drivers"
 	"github.com/k3s-io/kine/pkg/server"
+	"github.com/k3s-io/kine/pkg/tls"
 	"github.com/sirupsen/logrus"
 	"sync/atomic"
 	"time"
@@ -24,10 +25,11 @@ func init() {
 
 func New(_ context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
 	logrus.Info("New FDB backend")
-	return false, NewFdbStructured(cfg.DataSourceName, Directory), nil
+	return false, NewFdbStructured(cfg.DataSourceName, cfg.BackendTLSConfig, Directory), nil
 }
 
 type FDB struct {
+	tlsConfig        tls.Config
 	connectionString string
 	dirName          string
 
@@ -46,10 +48,11 @@ type FDB struct {
 	lastWatchRev atomic.Int64
 }
 
-func NewFdbStructured(connectionString string, dirName string) server.Backend {
+func NewFdbStructured(connectionString string, tlsConfig tls.Config, dirName string) server.Backend {
 	logrus.Infof("Creating a FoundationDB driver with directory: '%s'", dirName)
 	ThisFDB = &FDB{
 		connectionString: connectionString,
+		tlsConfig:        tlsConfig,
 		dirName:          dirName,
 	}
 	return &FdbLogger{
@@ -62,7 +65,7 @@ func (f *FDB) Start(ctx context.Context) error {
 	fdb.MustAPIVersion(730)
 	f.ctx = ctx
 
-	if err := setTLSConfig(); err != nil {
+	if err := f.setTLSConfig(); err != nil {
 		return err
 	}
 
@@ -115,29 +118,26 @@ func (f *FDB) Start(ctx context.Context) error {
 	return nil
 }
 
-func setTLSConfig() error {
-	if TLSCertificateFile != "" {
-		if err := fdb.Options().SetTLSCertPath(TLSCertificateFile); err != nil {
+// https://apple.github.io/foundationdb/tls.html#configuring-tls
+func (f *FDB) setTLSConfig() error {
+	if f.tlsConfig.CertFile != "" {
+		if err := fdb.Options().SetTLSCertPath(f.tlsConfig.CertFile); err != nil {
 			return err
 		}
 	}
-	if TLSKeyFile != "" {
-		if err := fdb.Options().SetTLSKeyPath(TLSKeyFile); err != nil {
+	if f.tlsConfig.KeyFile != "" {
+		if err := fdb.Options().SetTLSKeyPath(f.tlsConfig.KeyFile); err != nil {
 			return err
 		}
 	}
-	if TLSPassword != "" {
-		if err := fdb.Options().SetTLSPassword(TLSPassword); err != nil {
+	if f.tlsConfig.CAFile != "" {
+		if err := fdb.Options().SetTLSCaPath(f.tlsConfig.CAFile); err != nil {
 			return err
 		}
 	}
-	if TLSCAFile != "" {
-		if err := fdb.Options().SetTLSCaPath(TLSCAFile); err != nil {
-			return err
-		}
-	}
-	if TLSVerifyPeers != "" {
-		if err := fdb.Options().SetTLSVerifyPeers([]byte(TLSVerifyPeers)); err != nil {
+	if f.tlsConfig.SkipVerify {
+		// https://apple.github.io/foundationdb/tls.html#turning-down-the-validation
+		if err := fdb.Options().SetTLSVerifyPeers([]byte("Check.Valid=0")); err != nil {
 			return err
 		}
 	}
