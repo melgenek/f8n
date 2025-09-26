@@ -65,6 +65,9 @@ func (f *FDB) Start(ctx context.Context) error {
 	fdb.MustAPIVersion(730)
 	f.ctx = ctx
 
+	if err := logFDBTraces(); err != nil {
+		return err
+	}
 	if err := f.setTLSConfig(); err != nil {
 		return err
 	}

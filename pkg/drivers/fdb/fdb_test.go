@@ -26,6 +26,12 @@ var connectionString = env.GetString("FDB_CONNECTION_STRING", "docker:docker@127
 func TestMain(m *testing.M) {
 	CleanDirOnStart = true
 	logrus.SetLevel(logrus.WarnLevel)
+	logrus.SetFormatter(&logrus.JSONFormatter{
+		FieldMap: logrus.FieldMap{
+			logrus.FieldKeyLevel: "severity",
+			logrus.FieldKeyMsg:   "message",
+		},
+	})
 	forceRetryTransaction = func(i int) bool { return i < 2 }
 
 	code := m.Run()

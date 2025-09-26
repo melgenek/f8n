@@ -32,13 +32,11 @@ services:
   f8n-demo:
     container_name: f8n-demo
     image: ghcr.io/melgenek/f8n:v0.3.0
-    environment:
-      FDB_NETWORK_OPTION_TRACE_ENABLE: "/tmp"
-      FDB_NETWORK_OPTION_TRACE_FORMAT: "json"
     volumes:
       - ./fdb_pki:/opt/fdb/tls:ro
       - ./etcd_pki:/opt/etcd/tls:ro
     command:
+      - --debug
       - --endpoint
       - "fdb://docker:docker@fdb-demo:4500:tls"
       # FDB client TLS
