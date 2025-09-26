@@ -33,6 +33,7 @@ type Record struct {
 	CreateRevision tuple.Versionstamp
 	PrevRevision   tuple.Versionstamp
 	ValueSize      int64
+	WriteUUID      tuple.UUID
 	Value          []byte
 }
 
@@ -51,7 +52,6 @@ func (s *ByRevisionSubspace) GetSubspace() subspace.Subspace {
 }
 
 func (s *ByRevisionSubspace) Write(tr *fdb.Transaction, rev tuple.Versionstamp, record *Record) error {
-	record.ValueSize = int64(len(record.Value))
 	if err := s.writeBlob(tr, rev, record.Value); err != nil {
 		return err
 	}

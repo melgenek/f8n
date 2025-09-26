@@ -10,6 +10,7 @@ import (
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/k3s-io/kine/pkg/tls"
 	"github.com/sirupsen/logrus"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -23,15 +24,16 @@ func init() {
 	drivers.Register("fdb", New)
 }
 
-func New(_ context.Context, cfg *drivers.Config) (bool, server.Backend, error) {
+func New(_ context.Context, wg *sync.WaitGroup, cfg *drivers.Config) (bool, server.Backend, error) {
 	logrus.Info("New FDB backend")
-	return false, NewFdbStructured(cfg.DataSourceName, cfg.BackendTLSConfig, Directory), nil
+	return false, NewFDB(cfg.DataSourceName, cfg.BackendTLSConfig, Directory, wg), nil
 }
 
 type FDB struct {
 	tlsConfig        tls.Config
 	connectionString string
 	dirName          string
+	wg               *sync.WaitGroup
 
 	db  fdb.Database
 	dir directory.DirectorySubspace
@@ -45,15 +47,17 @@ type FDB struct {
 	broadcaster broadcaster.Broadcaster
 	ctx         context.Context
 
-	lastWatchRev atomic.Int64
+	backgroundReadWg sync.WaitGroup
+	lastWatchRev     atomic.Int64
 }
 
-func NewFdbStructured(connectionString string, tlsConfig tls.Config, dirName string) server.Backend {
+func NewFDB(connectionString string, tlsConfig tls.Config, dirName string, wg *sync.WaitGroup) server.Backend {
 	logrus.Infof("Creating a FoundationDB backend with directory: '%s'", dirName)
 	ThisFDB = &FDB{
 		connectionString: connectionString,
 		tlsConfig:        tlsConfig,
 		dirName:          dirName,
+		wg:               wg,
 	}
 	return &FdbLogger{
 		backend:   ThisFDB,
@@ -83,9 +87,23 @@ func (f *FDB) Start(ctx context.Context) error {
 		return err
 	}
 	f.db = db
+	//f.wg.Add(1)
+	//go func() {
+	//	defer f.wg.Done()
+	//	<-ctx.Done()
+	//	logrus.Warn("Closing db")
+	//	f.backgroundReadWg.Wait()
+	//	f.db.Close()
+	//	logrus.Warn("Closed db")
+	//}()
 
-	if err = f.openDirectory(); err != nil {
+	if err := f.db.Options().SetTransactionTimeout(transactionTimeout.Milliseconds()); err != nil {
 		return err
+	}
+	if dir, err := directory.CreateOrOpen(f.db, []string{f.dirName}, nil); err != nil {
+		return err
+	} else {
+		f.dir = dir
 	}
 
 	if CleanDirOnStart {
@@ -115,28 +133,6 @@ func (f *FDB) Start(ctx context.Context) error {
 	go f.ttl(ctx)
 
 	logrus.Info("Started the FoundationDB backend")
-	return nil
-}
-
-// The FDB operations intentionally retry forever and there is no explicit way to timeout directory opening.
-// https://forums.foundationdb.org/t/golang-fdb-mustopendefault-does-not-fail-when-fdb-cluster-content-points-to-invalid-host/715/2
-// Wrapping directory opening in a goroutine.
-func (f *FDB) openDirectory() error {
-	errCh := make(chan error, 1)
-	go func() {
-		dir, err := directory.CreateOrOpen(f.db, []string{f.dirName}, nil)
-		f.dir = dir
-		errCh <- err
-	}()
-
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return err
-		}
-	case <-time.After(transactionTimeout):
-		return errors.New("directory creation timed out")
-	}
 	return nil
 }
 

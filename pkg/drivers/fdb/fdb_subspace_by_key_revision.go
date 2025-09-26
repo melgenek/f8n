@@ -12,16 +12,9 @@ type KeyAndRevision struct {
 	Rev tuple.Versionstamp
 }
 
-type ByKeyAndRevisionValue struct {
-	IsCreate       bool
-	IsDelete       bool
-	CreateRevision tuple.Versionstamp
-	WriteUUID      tuple.UUID
-}
-
 type ByKeyAndRevisionRecord struct {
 	Key   KeyAndRevision
-	Value ByKeyAndRevisionValue
+	Value *Record
 }
 
 func (r *ByKeyAndRevisionRecord) GetCreateRevision() tuple.Versionstamp {
@@ -46,13 +39,12 @@ func (s *ByKeyAndRevisionSubspace) GetSubspace() subspace.Subspace {
 	return s.subspace
 }
 
-func (s *ByKeyAndRevisionSubspace) Write(tr *fdb.Transaction, key *KeyAndRevision, value *ByKeyAndRevisionValue) error {
+func (s *ByKeyAndRevisionSubspace) Write(tr *fdb.Transaction, key *KeyAndRevision, record *Record) error {
 	packKey, setValue := GetWriteOps(tr, s.subspace)
 	if revisionKey, err := packKey(tuple.Tuple{key.Key, key.Rev}); err != nil {
 		return err
 	} else {
-		t := tuple.Tuple{value.IsCreate, value.IsDelete, value.CreateRevision, value.WriteUUID}
-		setValue(revisionKey, t.Pack())
+		setValue(revisionKey, s.recordToTuple(record).Pack())
 		return nil
 	}
 }
@@ -83,18 +75,31 @@ func (s *ByKeyAndRevisionSubspace) parseKV(kv fdb.KeyValue) (*ByKeyAndRevisionRe
 	if err != nil {
 		return nil, err
 	}
-	isCreate := unpackedTuple[0].(bool)
-	isDelete := unpackedTuple[1].(bool)
-	createRevision := unpackedTuple[2].(tuple.Versionstamp)
-	writeUUID := unpackedTuple[3].(tuple.UUID)
-	return &ByKeyAndRevisionRecord{
-			KeyAndRevision{Key: key, Rev: versionstamp},
-			ByKeyAndRevisionValue{
-				IsCreate:       isCreate,
-				IsDelete:       isDelete,
-				CreateRevision: createRevision,
-				WriteUUID:      writeUUID,
-			},
-		},
-		nil
+	record := s.tupleToRecord(unpackedTuple)
+	record.Key = key
+	return &ByKeyAndRevisionRecord{KeyAndRevision{Key: key, Rev: versionstamp}, record}, nil
+}
+
+func (s *ByKeyAndRevisionSubspace) recordToTuple(record *Record) tuple.Tuple {
+	return tuple.Tuple{
+		record.IsDelete,
+		record.IsCreate,
+		record.Lease,
+		record.CreateRevision,
+		record.PrevRevision,
+		record.ValueSize,
+		record.WriteUUID,
+	}
+}
+
+func (s *ByKeyAndRevisionSubspace) tupleToRecord(t tuple.Tuple) *Record {
+	return &Record{
+		IsDelete:       t[0].(bool),
+		IsCreate:       t[1].(bool),
+		Lease:          t[2].(int64),
+		CreateRevision: t[3].(tuple.Versionstamp),
+		PrevRevision:   t[4].(tuple.Versionstamp),
+		ValueSize:      t[5].(int64),
+		WriteUUID:      t[6].(tuple.UUID),
+	}
 }

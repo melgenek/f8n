@@ -28,10 +28,20 @@ func (f *FDB) ttl(ctx context.Context) {
 	rwMutex := &sync.RWMutex{}
 	ttlEventKVMap := make(map[string]*ttlEventKV)
 	go func() {
+		f.backgroundReadWg.Add(1)
+		defer func() {
+			logrus.Warn("Done1")
+			f.backgroundReadWg.Done()
+		}()
 		for f.handleTTLEvents(ctx, rwMutex, queue, ttlEventKVMap) {
 		}
 	}()
 
+	f.backgroundReadWg.Add(1)
+	defer func() {
+		logrus.Warn("Done2")
+		f.backgroundReadWg.Done()
+	}()
 	for {
 		select {
 		case <-ctx.Done():
@@ -116,7 +126,7 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 	go func() {
 		defer close(result)
 
-		collector := newListCollector(f, 1000)
+		collector := newListCollector(f, 1000, true)
 		rev, err := f.listWithCollector("ttl1", "/", "", 0, collector)
 		revRecords := collector.records
 		for len(revRecords) > 0 {
@@ -131,7 +141,7 @@ func (f *FDB) ttlEvents(ctx context.Context) chan *server.Event {
 				}
 			}
 
-			collector = newListCollector(f, 1000)
+			collector = newListCollector(f, 1000, true)
 			_, err = f.listWithCollector("ttl2", "/", revRecords[len(revRecords)-1].Record.Key, rev, collector)
 			revRecords = collector.records
 		}

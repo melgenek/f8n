@@ -137,6 +137,11 @@ func (f *FDB) startWatch() (chan interface{}, error) {
 }
 
 func (f *FDB) poll(result chan interface{}, pollStart int64) {
+	f.backgroundReadWg.Add(1)
+	defer func() {
+		logrus.Warn("Done3")
+		f.backgroundReadWg.Done()
+	}()
 	f.lastWatchRev.Store(pollStart)
 
 	defer close(result)
@@ -169,15 +174,19 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 
 		if len(events) > 0 {
 			result <- events
-
-			watchFuture.(fdb.FutureNil).Cancel()
-		} else if err := watchFuture.(fdb.FutureNil).Get(); err != nil {
-			logrus.Errorf("Error waiting for a watch err=%v", err)
-		}
-		if len(events) > 0 {
 			f.lastWatchRev.Store(events[len(events)-1].KV.ModRevision)
+			watchFuture.Cancel()
 		} else {
 			f.lastWatchRev.Store(lastRev)
+			select {
+			case <-f.ctx.Done():
+				watchFuture.Cancel()
+				return
+			case err := <-WaitForFutureNil(watchFuture):
+				if err != nil {
+					logrus.Errorf("Error waiting for a watch err=%v", err)
+				}
+			}
 		}
 	}
 }

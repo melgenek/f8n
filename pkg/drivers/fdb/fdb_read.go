@@ -32,8 +32,8 @@ func (f *FDB) CurrentRevision(_ context.Context) (int64, error) {
 	}
 }
 
-func (f *FDB) List(_ context.Context, prefix, startKey string, limit, revision int64) (revRet int64, kvRet []*server.KeyValue, errRet error) {
-	rev, kvs, err := f.listKeyValue("List", prefix, startKey, limit, revision)
+func (f *FDB) List(_ context.Context, prefix, startKey string, limit, revision int64, keysOnly bool) (revRet int64, kvRet []*server.KeyValue, errRet error) {
+	rev, kvs, err := f.listKeyValue("List", prefix, startKey, limit, revision, keysOnly)
 	if err != nil {
 		return rev, nil, err
 	}
@@ -43,11 +43,11 @@ func (f *FDB) List(_ context.Context, prefix, startKey string, limit, revision i
 	return rev, kvs, nil
 }
 
-func (f *FDB) Get(_ context.Context, key, rangeEnd string, _, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
+func (f *FDB) Get(_ context.Context, key, rangeEnd string, _, revision int64, keysOnly bool) (revRet int64, kvRet *server.KeyValue, errRet error) {
 	if rangeEnd != "" {
 		return 0, nil, fmt.Errorf("invalid 'rangeEnd' for Get. Expected: '', got %s", rangeEnd)
 	}
-	rev, kvs, err := f.listKeyValue("Get", key, key, 1, revision)
+	rev, kvs, err := f.listKeyValue("Get", key, key, 1, revision, keysOnly)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -107,8 +107,8 @@ func (c *countCollector) String() string {
 	return fmt.Sprintf("{count=%d}", c.totalCount)
 }
 
-func (f *FDB) listKeyValue(caller, prefix, startKey string, limit, maxRevision int64) (resRev int64, resEvents []*server.KeyValue, resErr error) {
-	collector := newListCollector(f, limit)
+func (f *FDB) listKeyValue(caller, prefix, startKey string, limit, maxRevision int64, keysOnly bool) (resRev int64, resEvents []*server.KeyValue, resErr error) {
+	collector := newListCollector(f, limit, keysOnly)
 	rev, err := f.listWithCollector(caller, prefix, startKey, maxRevision, collector)
 	if err != nil {
 		return 0, nil, err
@@ -124,12 +124,13 @@ func (f *FDB) listKeyValue(caller, prefix, startKey string, limit, maxRevision i
 type listCollector struct {
 	f              *FDB
 	limit          int64
+	keysOnly       bool
 	records        []*RevRecord
 	batchIterators []*fdb.RangeIterator
 	batchRecords   []*RevRecord
 }
 
-func newListCollector(f *FDB, limit int64) *listCollector {
+func newListCollector(f *FDB, limit int64, keysOnly bool) *listCollector {
 	capacity := limit
 	if capacity == 0 {
 		capacity = 100
@@ -137,6 +138,7 @@ func newListCollector(f *FDB, limit int64) *listCollector {
 	return &listCollector{
 		f:              f,
 		limit:          limit,
+		keysOnly:       keysOnly,
 		records:        make([]*RevRecord, 0, capacity),
 		batchIterators: make([]*fdb.RangeIterator, 0, capacity),
 		batchRecords:   make([]*RevRecord, 0, capacity),
@@ -149,15 +151,19 @@ func (c *listCollector) startBatch() {
 }
 
 func (c *listCollector) next(tr *fdb.Transaction, record *ByKeyAndRevisionRecord) (fdb.Key, bool, error) {
-	recordIt, err := c.f.byRevision.GetIterator(tr, record.Key.Rev)
-	if err != nil {
-		return nil, false, err
-	}
-	c.batchIterators = append(c.batchIterators, recordIt)
-
-	if len(c.batchIterators) >= 1 {
-		if err := c.fetchIterators(); err != nil {
+	if c.keysOnly {
+		c.batchRecords = append(c.batchRecords, &RevRecord{Rev: record.Key.Rev, Record: record.Value})
+	} else {
+		recordIt, err := c.f.byRevision.GetIterator(tr, record.Key.Rev)
+		if err != nil {
 			return nil, false, err
+		}
+		c.batchIterators = append(c.batchIterators, recordIt)
+
+		if len(c.batchIterators) >= 1 {
+			if err := c.fetchIterators(); err != nil {
+				return nil, false, err
+			}
 		}
 	}
 	return nil, c.needMore(), nil
@@ -168,7 +174,11 @@ func (c *listCollector) needMore() bool {
 }
 
 func (c *listCollector) endBatch(*fdb.Transaction, bool) error {
-	return c.fetchIterators()
+	if c.keysOnly {
+		return nil
+	} else {
+		return c.fetchIterators()
+	}
 }
 
 func (c *listCollector) fetchIterators() error {

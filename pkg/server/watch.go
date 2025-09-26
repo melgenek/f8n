@@ -56,7 +56,7 @@ func (s *KVServerBridge) Watch(ws etcdserverpb.Watch_WatchServer) error {
 			w.Cancel(cr.WatchId, 0, 0, nil)
 		}
 		if pr := msg.GetProgressRequest(); pr != nil {
-			w.ProgressIfSynced(ws.Context())
+			w.Progress(ws.Context())
 		}
 	}
 }
@@ -88,6 +88,11 @@ func (w *watcher) Start(ctx context.Context, r *etcdserverpb.WatchCreateRequest)
 
 	key := string(r.Key)
 	startRevision := r.StartRevision
+
+	// redirect apiserver watches to the substitute compact revision key
+	if key == compactRevKey {
+		key = compactRevAPI
+	}
 
 	var progressCh chan int64
 	if r.ProgressNotify {

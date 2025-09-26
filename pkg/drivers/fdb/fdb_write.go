@@ -87,6 +87,7 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 			IsCreate:       true,
 			IsDelete:       false,
 			Lease:          lease,
+			ValueSize:      int64(len(value)),
 			Value:          value,
 			CreateRevision: dummyVersionstamp,
 			PrevRevision:   dummyVersionstamp,
@@ -168,6 +169,7 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 			IsCreate:       false,
 			IsDelete:       false,
 			Lease:          lease,
+			ValueSize:      int64(len(value)),
 			Value:          value,
 			CreateRevision: lastRecord.GetCreateRevision(),
 			PrevRevision:   lastRecord.Key.Rev,
@@ -239,6 +241,7 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 			IsCreate:       false,
 			IsDelete:       true,
 			Lease:          record.Lease,
+			ValueSize:      record.ValueSize,
 			Value:          record.Value,
 			CreateRevision: lastRecord.GetCreateRevision(),
 			PrevRevision:   lastRecord.Key.Rev,
@@ -259,6 +262,7 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 
 func (f *FDB) append(tr *fdb.Transaction, record *Record) (fdb.FutureKey, tuple.UUID, error) {
 	uuid := createUUID()
+	record.WriteUUID = uuid
 	newRev, revFuture, err := f.rev.IncrementAndGet(tr)
 	if err != nil {
 		return nil, uuid, err
@@ -267,13 +271,7 @@ func (f *FDB) append(tr *fdb.Transaction, record *Record) (fdb.FutureKey, tuple.
 		return nil, uuid, err
 	}
 
-	byKeyRevValue := &ByKeyAndRevisionValue{
-		IsDelete:       record.IsDelete,
-		IsCreate:       record.IsCreate,
-		CreateRevision: record.CreateRevision,
-		WriteUUID:      uuid,
-	}
-	if err := f.byKeyAndRevision.Write(tr, &KeyAndRevision{Key: record.Key, Rev: newRev}, byKeyRevValue); err != nil {
+	if err := f.byKeyAndRevision.Write(tr, &KeyAndRevision{Key: record.Key, Rev: newRev}, record); err != nil {
 		return nil, uuid, err
 	}
 

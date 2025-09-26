@@ -32,7 +32,7 @@ func (b *FdbLogger) Start(ctx context.Context) error {
 	return err
 }
 
-func (b *FdbLogger) Get(ctx context.Context, key, rangeEnd string, limit, revision int64) (revRet int64, kvRet *server.KeyValue, errRet error) {
+func (b *FdbLogger) Get(ctx context.Context, key, rangeEnd string, limit, revision int64, keysOnly bool) (revRet int64, kvRet *server.KeyValue, errRet error) {
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
@@ -44,7 +44,7 @@ func (b *FdbLogger) Get(ctx context.Context, key, rangeEnd string, limit, revisi
 		b.logMethod(dur, fStr, key, rangeEnd, revision, revRet, kvRet != nil, size, errRet, dur)
 	}()
 
-	return b.backend.Get(ctx, key, rangeEnd, limit, revision)
+	return b.backend.Get(ctx, key, rangeEnd, limit, revision, keysOnly)
 }
 
 func (b *FdbLogger) Create(ctx context.Context, key string, value []byte, lease int64) (revRet int64, errRet error) {
@@ -80,7 +80,7 @@ func (b *FdbLogger) Delete(ctx context.Context, key string, revision int64) (rev
 	return b.backend.Delete(ctx, key, revision)
 }
 
-func (b *FdbLogger) List(ctx context.Context, prefix, startKey string, limit, revision int64) (revRet int64, kvRet []*server.KeyValue, errRet error) {
+func (b *FdbLogger) List(ctx context.Context, prefix, startKey string, limit, revision int64, keysOnly bool) (revRet int64, kvRet []*server.KeyValue, errRet error) {
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
@@ -88,7 +88,7 @@ func (b *FdbLogger) List(ctx context.Context, prefix, startKey string, limit, re
 		b.logMethod(dur, fStr, prefix, startKey, limit, revision, revRet, len(kvRet), errRet, dur)
 	}()
 
-	return b.backend.List(ctx, prefix, startKey, limit, revision)
+	return b.backend.List(ctx, prefix, startKey, limit, revision, keysOnly)
 }
 
 func (b *FdbLogger) Count(ctx context.Context, prefix, startKey string, revision int64) (revRet int64, count int64, err error) {

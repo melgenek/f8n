@@ -90,3 +90,12 @@ func (c ConstKeyFuture) MustGet() fdb.Key      { return c.versionstamp.Bytes() }
 func (c ConstKeyFuture) BlockUntilReady()      {}
 func (c ConstKeyFuture) IsReady() bool         { return true }
 func (c ConstKeyFuture) Cancel()               {}
+
+func WaitForFutureNil(f fdb.FutureNil) <-chan error {
+	res := make(chan error, 1)
+	go func() {
+		err := f.Get()
+		res <- err
+	}()
+	return res
+}

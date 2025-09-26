@@ -12,6 +12,7 @@ import (
 	"k8s.io/utils/env"
 	"os"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,16 +44,16 @@ func TestMain(m *testing.M) {
 func TestFDB(t *testing.T) {
 	n := 4
 	sameKeyN := 3
-	f := NewFdbStructured(connectionString, tls.Config{}, "dir1")
+	f := NewFDB(connectionString, tls.Config{}, "dir1", &sync.WaitGroup{})
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	err := f.Start(ctx)
 	require.NoError(t, err)
-	createRecords(t, f, ctx, 500, maxRecordSize) // fill up fdb
+	createRecords(t, f, ctx, 500, 100) // fill up fdb
 	cancelCtx()
 
 	forceRetryTransaction = func(i int) bool { return i < 2 }
 
-	f = NewFdbStructured(connectionString, tls.Config{}, "dir2")
+	f = NewFDB(connectionString, tls.Config{}, "dir2", &sync.WaitGroup{})
 	ctx, cancelCtx = context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancelCtx()
 	err = f.Start(ctx)
@@ -61,11 +62,11 @@ func TestFDB(t *testing.T) {
 	watchAll := f.Watch(ctx, "/abc/", 0)
 	watchKey := f.Watch(ctx, fmt.Sprintf("/abc/key%04d", n-1), 0)
 
-	_, result, err := f.List(ctx, "/", "/registry/health", 0, 0)
+	_, result, err := f.List(ctx, "/", "/registry/health", 0, 0, false)
 	require.NoError(t, err)
 	require.Empty(t, result)
 
-	_, result, err = f.List(ctx, "/registry/health", "/registry/health", 0, 0)
+	_, result, err = f.List(ctx, "/registry/health", "/registry/health", 0, 0, false)
 	require.NoError(t, err)
 	require.Len(t, result, 1, "Expected to find /registry/health in the list, but got: %v", result)
 
@@ -87,7 +88,7 @@ func TestFDB(t *testing.T) {
 	history = append(history, &server.Event{Delete: false, Create: true, KV: event})
 	currentRev := nextRev
 
-	_, result, err = f.List(ctx, "/abc/l/", "/abc/l/", 0, currentRev)
+	_, result, err = f.List(ctx, "/abc/l/", "/abc/l/", 0, currentRev, false)
 	require.NoError(t, err)
 	require.Equal(t, valuesAsSlice(events), result)
 
@@ -98,7 +99,7 @@ func TestFDB(t *testing.T) {
 
 			var event *server.KeyValue
 			if j == 0 {
-				_, getResult, err := f.Get(ctx, keyName, "", 1, 0)
+				_, getResult, err := f.Get(ctx, keyName, "", 1, 0, false)
 				require.NoError(t, err)
 				require.Empty(t, getResult)
 
@@ -131,19 +132,19 @@ func TestFDB(t *testing.T) {
 			_, err = f.Create(ctx, keyName, value, 0)
 			require.Error(t, err)
 
-			_, result, err = f.List(ctx, "/abc/", "/abc/key", 0, currentRev)
+			_, result, err = f.List(ctx, "/abc/", "/abc/key", 0, currentRev, false)
 			require.NoError(t, err)
 			require.Equal(t, valuesAsSlice(events), orEmpty(result))
 
-			_, result, err = f.List(ctx, "/abc/", "", 0, currentRev)
+			_, result, err = f.List(ctx, "/abc/", "", 0, currentRev, false)
 			require.NoError(t, err)
 			require.Equal(t, valuesAsSlice(events), orEmpty(result))
 
-			_, result, err = f.List(ctx, "/abc/", "/abc/", 0, currentRev)
+			_, result, err = f.List(ctx, "/abc/", "/abc/", 0, currentRev, false)
 			require.NoError(t, err)
 			require.Equal(t, valuesAsSlice(events), orEmpty(result))
 
-			_, result, err = f.List(ctx, "/abc/", "/abc", 0, currentRev)
+			_, result, err = f.List(ctx, "/abc/", "/abc", 0, currentRev, false)
 			require.NoError(t, err)
 			require.Equal(t, valuesAsSlice(events), orEmpty(result))
 
@@ -151,7 +152,7 @@ func TestFDB(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, int64(events.Len()), count)
 
-			rev, result, err := f.List(ctx, keyName, keyName, 0, 0)
+			rev, result, err := f.List(ctx, keyName, keyName, 0, 0, false)
 			require.NoError(t, err)
 			require.LessOrEqual(t, nextRev, rev)
 			require.Equal(t, []*server.KeyValue{event}, result)
@@ -160,7 +161,7 @@ func TestFDB(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, int64(1), count)
 
-			rev, result, err = f.List(ctx, "/", keyName, 0, 0)
+			rev, result, err = f.List(ctx, "/", keyName, 0, 0, false)
 			require.NoError(t, err)
 			require.NotContains(t, result, event)
 
@@ -173,25 +174,29 @@ func TestFDB(t *testing.T) {
 			events.Set(keyName, append(keyEvents, event))
 			currentRev = nextRev
 
-			rev, result, err = f.List(ctx, "/abc/", "/abc/key", 0, currentRev)
+			rev, result, err = f.List(ctx, "/abc/", "/abc/key", 0, currentRev, false)
 			require.NoError(t, err)
 			require.Equal(t, valuesAsSlice(events), result)
 			require.Equal(t, currentRev, rev)
 
-			_, result, err = f.List(ctx, "/abc/key", "/abc/key", 0, currentRev)
+			_, resultKeysOnly, err := f.List(ctx, "/abc/", "/abc/key", 0, currentRev, true)
+			require.NoError(t, err)
+			require.Equal(t, len(result), len(resultKeysOnly))
+
+			_, result, err = f.List(ctx, "/abc/key", "/abc/key", 0, currentRev, false)
 			require.NoError(t, err)
 			require.Empty(t, result)
 
-			rev, result, err = f.List(ctx, keyName, keyName, 0, currentRev)
+			rev, result, err = f.List(ctx, keyName, keyName, 0, currentRev, false)
 			require.NoError(t, err)
 			require.Equal(t, nextRev, rev)
 			require.Equal(t, []*server.KeyValue{event}, result)
 
-			rev, result, err = f.List(ctx, "/", keyName, 0, currentRev)
+			rev, result, err = f.List(ctx, "/", keyName, 0, currentRev, false)
 			require.NoError(t, err)
 			require.NotContains(t, result, event)
 
-			rev, result, err = f.List(ctx, "/abc/", "/registry/health", 0, 1)
+			rev, result, err = f.List(ctx, "/abc/", "/registry/health", 0, 1, false)
 			require.NoError(t, err)
 			require.Empty(t, result)
 			require.Equal(t, rev, int64(1))
@@ -213,12 +218,12 @@ func TestFDB(t *testing.T) {
 	history = append(history, &server.Event{Delete: true, Create: false, KV: deleteEvent, PrevKV: keyEvents[len(keyEvents)-1]})
 	events.Delete(keyName)
 
-	rev, result, err := f.List(ctx, "/abc/", "/abc/key", 0, currentRev)
+	rev, result, err := f.List(ctx, "/abc/", "/abc/key", 0, currentRev, false)
 	require.NoError(t, err)
 	require.Equal(t, valuesAsSlice(events), result)
 	require.GreaterOrEqual(t, rev, currentRev)
 
-	rev, result, err = f.List(ctx, "/abc/", "/abc/key", 0, 0)
+	rev, result, err = f.List(ctx, "/abc/", "/abc/key", 0, 0, false)
 	require.NoError(t, err)
 	require.Equal(t, valuesAsSlice(events), result)
 	require.GreaterOrEqual(t, rev, currentRev)
@@ -262,7 +267,7 @@ func TestFDB(t *testing.T) {
 func TestFDBLargeRecords(t *testing.T) {
 	forceRetryTransaction = func(i int) bool { return i < 1 }
 
-	f := NewFdbStructured(connectionString, tls.Config{}, "dir1")
+	f := NewFDB(connectionString, tls.Config{}, "dir1", &sync.WaitGroup{})
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
 	defer cancelCtx()
 
@@ -283,19 +288,26 @@ func TestFDBLargeRecords(t *testing.T) {
 	}
 
 	// Get record
-	_, kv, err := f.Get(ctx, "/large/key42", "", 0, 0)
+	_, kv, err := f.Get(ctx, "/large/key42", "", 0, 0, false)
 	require.NoError(t, err)
 	require.NotNil(t, kv)
 	assert.Equal(t, "/large/key42", kv.Key)
 	assert.True(t, bytes.Equal(records["/large/key42"], kv.Value), "value for key '/large/key42' does not match")
 
+	_, kvKeyOnly, err := f.Get(ctx, "/large/key42", "", 0, 0, true)
+	require.NoError(t, err)
+	require.NotNil(t, kvKeyOnly)
+	assert.Equal(t, "/large/key42", kvKeyOnly.Key)
+	kv.Value = nil
+	assert.Equal(t, kv, kvKeyOnly)
+
 	// List all records
-	_, kvs, err := f.List(ctx, "/large/", "/large/", 0, 0)
+	_, kvs, err := f.List(ctx, "/large/", "/large/", 0, 0, false)
 	require.NoError(t, err)
 	require.Equal(t, recordCount, len(kvs))
 
 	// List all records
-	_, kvs2, err := f.List(ctx, "/large/", "/large/key0", 0, 0)
+	_, kvs2, err := f.List(ctx, "/large/", "/large/key0", 0, 0, false)
 	require.NoError(t, err)
 	require.Equal(t, recordCount-1, len(kvs2))
 
@@ -324,12 +336,12 @@ func TestFDBLargeRecords(t *testing.T) {
 	delete(records, keyToDelete)
 
 	// Verify it's gone with Get
-	_, kv, err = f.Get(ctx, keyToDelete, "", 0, 0)
+	_, kv, err = f.Get(ctx, keyToDelete, "", 0, 0, false)
 	require.NoError(t, err)
 	require.Nil(t, kv, "deleted record should not be found with Get")
 
 	// Verify it's gone with List
-	_, kvsAfterDelete, err := f.List(ctx, "/large/", "", 0, 0)
+	_, kvsAfterDelete, err := f.List(ctx, "/large/", "", 0, 0, false)
 	require.NoError(t, err)
 	require.Len(t, kvsAfterDelete, recordCount-1, "listKeyValue should have one less record after delete")
 
@@ -348,7 +360,7 @@ func TestCompaction(t *testing.T) {
 	newValue := []byte("newVal123")
 	updatedLease := int64(123)
 
-	f := NewFdbStructured(connectionString, tls.Config{}, "dir1")
+	f := NewFDB(connectionString, tls.Config{}, "dir1", &sync.WaitGroup{})
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(20)*time.Second)
 	defer cancelCtx()
 
@@ -371,7 +383,7 @@ func TestCompaction(t *testing.T) {
 	require.Equal(t, updatedLease, updatedKv.Lease, "Lease should match the provided lease")
 
 	// Get created value by revision
-	_, kv, err := f.Get(ctx, keyName, "", 0, updatedRev-1)
+	_, kv, err := f.Get(ctx, keyName, "", 0, updatedRev-1, false)
 	require.NoError(t, err)
 	require.NotNil(t, kv, "Expected to find the key after compaction")
 	require.Equal(t, value, kv.Value, "Value should match the updated value")
@@ -382,11 +394,11 @@ func TestCompaction(t *testing.T) {
 	require.Greater(t, compactRev, int64(0), "Expected a valid revision after compaction")
 
 	// Get value by revision
-	_, _, err = f.Get(ctx, keyName, "", 0, updatedRev-1)
+	_, _, err = f.Get(ctx, keyName, "", 0, updatedRev-1, false)
 	require.ErrorIs(t, err, server.ErrCompacted)
 
 	// Verify the key still exists after compaction
-	_, kv, err = f.Get(ctx, keyName, "", 0, 0)
+	_, kv, err = f.Get(ctx, keyName, "", 0, 0, false)
 	require.NoError(t, err)
 	require.NotNil(t, kv, "Expected to find the key after compaction")
 	require.Equal(t, keyName, kv.Key, "Key should match the original key")
@@ -394,12 +406,12 @@ func TestCompaction(t *testing.T) {
 	require.Equal(t, newValue, kv.Value, "Value should match the updated value")
 
 	// Verify the health key exists
-	_, kv, err = f.Get(ctx, "/registry/health", "", 0, 0)
+	_, kv, err = f.Get(ctx, "/registry/health", "", 0, 0, false)
 	require.NoError(t, err)
 	require.NotNil(t, kv, "Expected to find the key after compaction")
 
 	// Verify the key can still be listed
-	_, kvs, err := f.List(ctx, "/abc/", "/abc/key", 0, 0)
+	_, kvs, err := f.List(ctx, "/abc/", "/abc/key", 0, 0, false)
 	require.NoError(t, err)
 	require.Len(t, kvs, 1, "Expected to find one key after compaction")
 	require.Equal(t, keyName, kvs[0].Key, "Listed key should match the original key")
@@ -433,12 +445,12 @@ func TestCompaction(t *testing.T) {
 	require.Equal(t, updatedLease, deleteKv.Lease, "Lease should match the provided lease")
 
 	// Verify the key is gone after deletion
-	_, kv, err = f.Get(ctx, keyName, "", 0, 0)
+	_, kv, err = f.Get(ctx, keyName, "", 0, 0, false)
 	require.NoError(t, err)
 	require.Nil(t, kv, "Expected to not find the key after deletion")
 
 	// Verify the key is gone in the list
-	_, kvs, err = f.List(ctx, "/abc/", "/abc/key", 0, 0)
+	_, kvs, err = f.List(ctx, "/abc/", "/abc/key", 0, 0, false)
 	require.NoError(t, err)
 	require.Empty(t, kvs, "Expected to not find the key in the list after deletion")
 
@@ -452,7 +464,7 @@ func TestCompaction(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the health key exists
-	_, kv, err = f.Get(ctx, "/registry/health", "", 0, 0)
+	_, kv, err = f.Get(ctx, "/registry/health", "", 0, 0, false)
 	require.NoError(t, err)
 	require.NotNil(t, kv, "Expected to find the key after compaction")
 
@@ -479,7 +491,7 @@ func TestWatchAll(t *testing.T) {
 	maxBatchSize = 10
 	recordsCount := 53
 
-	f := NewFdbStructured(connectionString, tls.Config{}, "dir1")
+	f := NewFDB(connectionString, tls.Config{}, "dir1", &sync.WaitGroup{})
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
 	defer cancelCtx()
 
@@ -509,7 +521,7 @@ func TestExceedSizeLarge(t *testing.T) {
 	_, err := rand.Read(value)
 	require.NoError(t, err)
 
-	f := NewFdbStructured(connectionString, tls.Config{}, "dir1")
+	f := NewFDB(connectionString, tls.Config{}, "dir1", &sync.WaitGroup{})
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
 	defer cancelCtx()
 
@@ -526,7 +538,7 @@ func TestExceedSizeLarge(t *testing.T) {
 func TestFailUnavailableServer(t *testing.T) {
 	transactionTimeout = 1 * time.Second
 
-	f := NewFdbStructured("any:any@1.2.3.4:9999", tls.Config{}, "dir1")
+	f := NewFDB("any:any@1.2.3.4:9999", tls.Config{}, "dir1", &sync.WaitGroup{})
 	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
 	defer cancelCtx()
 
