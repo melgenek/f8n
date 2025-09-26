@@ -517,6 +517,17 @@ func TestExceedSizeLarge(t *testing.T) {
 	require.ErrorIs(t, err, rpctypes.ErrRequestTooLarge)
 }
 
+func TestFailUnavailableServer(t *testing.T) {
+	transactionTimeout = 1 * time.Second
+
+	f := NewFdbStructured("any:any@1.2.3.4:9999", tls.Config{}, "dir1")
+	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
+	defer cancelCtx()
+
+	err := f.Start(ctx)
+	require.Error(t, err)
+}
+
 func createRecords(t *testing.T, f server.Backend, ctx context.Context, recordCount int, recordSize int) map[string][]byte {
 	g := errgroup.Group{}
 	g.SetLimit(50)

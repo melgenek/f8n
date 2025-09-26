@@ -81,28 +81,25 @@ func (f *FDB) Start(ctx context.Context) error {
 	}
 	f.db = db
 
-	etcd, err := directory.CreateOrOpen(db, []string{f.dirName}, nil)
-	if err != nil {
+	if err = f.openDirectory(); err != nil {
 		return err
 	}
-	f.dir = etcd
 
 	if CleanDirOnStart {
-		_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, e error) {
-			tr.ClearRange(etcd)
-			return
+		_, err = transact(db, 0, func(tr fdb.Transaction) (interface{}, error) {
+			tr.ClearRange(f.dir)
+			return 0, nil
 		})
+		if err != nil {
+			return err
+		}
 	}
 
-	if err != nil {
-		return err
-	}
-
-	f.byRevision = CreateByRevisionSubspace(etcd)
-	f.byKeyAndRevision = CreateByKeyRevisionSubspace(etcd)
-	f.watch = CreateWatchSubspace(etcd)
-	f.compactRev = CreateCompactRevisionSubspace(etcd)
-	f.rev = CreateRevisionSubspace(etcd)
+	f.byRevision = CreateByRevisionSubspace(f.dir)
+	f.byKeyAndRevision = CreateByKeyRevisionSubspace(f.dir)
+	f.watch = CreateWatchSubspace(f.dir)
+	f.compactRev = CreateCompactRevisionSubspace(f.dir)
+	f.rev = CreateRevisionSubspace(f.dir)
 
 	// https://github.com/kubernetes/kubernetes/blob/442a69c3bdf6fe8e525b05887e57d89db1e2f3a5/staging/src/k8s.io/apiserver/pkg/storage/storagebackend/factory/etcd3.go#L97
 	if !APITest {
@@ -115,6 +112,28 @@ func (f *FDB) Start(ctx context.Context) error {
 	go f.ttl(ctx)
 
 	logrus.Info("Started the FoundationDB backend")
+	return nil
+}
+
+// The FDB operations intentionally retry forever and there is no explicit way to timeout directory opening.
+// https://forums.foundationdb.org/t/golang-fdb-mustopendefault-does-not-fail-when-fdb-cluster-content-points-to-invalid-host/715/2
+// Wrapping directory opening in a goroutine.
+func (f *FDB) openDirectory() error {
+	errCh := make(chan error, 1)
+	go func() {
+		dir, err := directory.CreateOrOpen(f.db, []string{f.dirName}, nil)
+		f.dir = dir
+		errCh <- err
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return err
+		}
+	case <-time.After(transactionTimeout):
+		return errors.New("directory creation timed out")
+	}
 	return nil
 }
 

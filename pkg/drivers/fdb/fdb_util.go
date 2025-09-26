@@ -13,9 +13,11 @@ const (
 	notCommittedErrorCode = 1020 // Transaction not committed due to conflict with another transaction
 
 	splitRangeAfterDuration  = 1 * time.Second
-	transactionTimeout       = 10 * time.Second
 	transactionMaxRetryCount = 1000
 )
+
+// var for testing
+var transactionTimeout = 10 * time.Second
 
 var forceRetryTransaction = func(i int) bool { return false }
 
@@ -60,9 +62,6 @@ func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 
 	res, err := transact(db, batchResult{}, func(tr fdb.Transaction) (batchResult, error) {
 		res := batchResult{collectorNeedsMore: true}
-		if err := tr.Options().SetTimeout(transactionTimeout.Milliseconds()); err != nil {
-			return res, fmt.Errorf("failed to set timeout limit: %w", err)
-		}
 
 		start := time.Now()
 		// Snapshot read does not add read conflict ranges
@@ -103,6 +102,10 @@ func transact[T any](d fdb.Database, defaultValue T, f func(fdb.Transaction) (T,
 
 	wrapped := func() (T, error) {
 		defer panicToError(&e)
+
+		if err := tr.Options().SetTimeout(transactionTimeout.Milliseconds()); err != nil {
+			return defaultValue, fmt.Errorf("failed to set timeout limit: %w", err)
+		}
 
 		// https://forums.foundationdb.org/t/defaults-for-transaction-timeouts-and-retries/315/2
 		e = tr.Options().SetRetryLimit(transactionMaxRetryCount)
