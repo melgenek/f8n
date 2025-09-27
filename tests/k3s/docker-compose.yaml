@@ -54,7 +54,7 @@ services:
     container_name: k3s
     depends_on:
       - f8n
-    image: docker.io/rancher/k3s:v1.33.3-k3s1
+    image: docker.io/rancher/k3s:v1.34.1-k3s1
     privileged: true
     command:
       - server

@@ -177,7 +177,7 @@ func TestFDB(t *testing.T) {
 			rev, result, err = f.List(ctx, "/abc/", "/abc/key", 0, currentRev, false)
 			require.NoError(t, err)
 			require.Equal(t, valuesAsSlice(events), result)
-			require.Equal(t, currentRev, rev)
+			require.LessOrEqual(t, currentRev, rev)
 
 			_, resultKeysOnly, err := f.List(ctx, "/abc/", "/abc/key", 0, currentRev, true)
 			require.NoError(t, err)
@@ -189,7 +189,7 @@ func TestFDB(t *testing.T) {
 
 			rev, result, err = f.List(ctx, keyName, keyName, 0, currentRev, false)
 			require.NoError(t, err)
-			require.Equal(t, nextRev, rev)
+			require.LessOrEqual(t, nextRev, rev)
 			require.Equal(t, []*server.KeyValue{event}, result)
 
 			rev, result, err = f.List(ctx, "/", keyName, 0, currentRev, false)

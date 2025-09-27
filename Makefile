@@ -13,10 +13,12 @@ build:
 .PHONY: run-tests
 run-tests:
 	docker compose -f tests/fdb/docker-compose.yaml up --build --exit-code-from tests --abort-on-container-exit
+	docker compose -f tests/fdb/docker-compose.yaml down
 
 .PHONY: run-tests-api
 run-tests-api:
 	docker compose -f tests/api/docker-compose.yaml up --build --exit-code-from tests --abort-on-container-exit
+	docker compose -f tests/api/docker-compose.yaml down
 
 .PHONY: start-k3s
 start-k3s:

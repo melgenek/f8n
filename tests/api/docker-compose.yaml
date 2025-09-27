@@ -1,6 +1,6 @@
 services:
   fdb-test:
-    container_name: fdb-test-api
+    container_name: fdb-test
     image: ghcr.io/melgenek/f8n/foundationdb:7.3.69
     post_start:
      - command: >

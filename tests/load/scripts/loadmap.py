@@ -57,39 +57,41 @@ def main(rounds, *args, **kwargs):
 def update_or_merge_configmap(cm):
     while True:
         try:
-            logging.debug(f"Updating {cm.metadata.name} rev={cm.metadata.resource_version}")
+            # Always fetch latest version first
+            latest_cm = v1.read_namespaced_config_map(name=cm.metadata.name, namespace=namespace)
+            if not latest_cm.data:
+                latest_cm.data = {}
+            # Merge new data
+            latest_cm.data.update(cm.data)
+            cm = latest_cm
+
+            # Replace using the correct resourceVersion
             return v1.replace_namespaced_config_map(name=cm.metadata.name, namespace=namespace, body=cm)
         except client.exceptions.ApiException as e:
             logging.debug(f"\tError: {e.status}")
-            if e.status == 409 and 'StorageError: invalid object' in e.body:
-                logging.debug("\tCreating and merging...")
-                cm1 = create_or_get_configmap(cm)
-                if not cm1.data:
-                    cm1.data = dict()
-                cm1.data.update(cm.data)
-                cm = cm1
-            elif e.status == 409:
-                logging.debug("\tReading and merging...")
+            if e.status == 404:
+                # ConfigMap doesn't exist, try to create it
+                cm.metadata.resource_version = None  # must be None for create
                 try:
-                    cm1 = v1.read_namespaced_config_map(name=cm.metadata.name, namespace=namespace)
-                    if not cm1.data:
-                        cm1.data = dict()
-                    cm1.data.update(cm.data)
-                    cm = cm1
+                    return v1.create_namespaced_config_map(namespace=namespace, body=cm)
                 except client.exceptions.ApiException as e1:
-                    if e1.status == 404:
-                        pass
+                    if e1.status == 409:
+                        # Someone else created it, retry merge
+                        continue
                     else:
-                        raise e1
+                        raise
+            elif e.status == 409:
+                # Conflict, retry with latest version
+                continue
             else:
-                raise e
+                raise
 
 
 def create_or_get_configmap(cm):
-    cm.metadata.resource_version = ''
     while True:
         try:
             logging.debug(f"Creating {cm.metadata.name}")
+            cm.metadata.resource_version = None  # must be None for create
             return v1.create_namespaced_config_map(namespace=namespace, body=cm)
         except client.exceptions.ApiException as e:
             logging.debug(f"\tError: {e.status}")
