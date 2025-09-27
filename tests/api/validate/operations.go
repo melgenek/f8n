@@ -16,7 +16,7 @@ package validate
 
 import (
 	"errors"
-	forkedModel "github.com/melgenek/f8n/pkg/api_test/model"
+	forkedModel "github.com/melgenek/f8n/tests/api/model"
 	"go.etcd.io/etcd/tests/v3/robustness/validate"
 	"time"
 

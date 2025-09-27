@@ -13,7 +13,7 @@ ENV SRC_DIR=/go/src/github.com/melgenek/f8n
 WORKDIR ${SRC_DIR}/
 COPY ./go.mod ./go.sum ./main.go ./
 COPY ./pkg ./pkg
-COPY ./.git ./.git
+COPY ./tests/api ./tests/api
 COPY ./.golangci.json ./.golangci.json
 
 ARG FDB_VERSION=7.3.69
