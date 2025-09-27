@@ -37,9 +37,6 @@ func (f *FDB) List(_ context.Context, prefix, startKey string, limit, revision i
 	if err != nil {
 		return rev, nil, err
 	}
-	if revision != 0 {
-		rev = revision
-	}
 	return rev, kvs, nil
 }
 

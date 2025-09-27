@@ -73,3 +73,6 @@ func (F FDBEtcdProcess) Kill() error {
 	F.cancel()
 	return nil
 }
+
+func (F FDBEtcdProcess) Pause() error  { return nil }
+func (F FDBEtcdProcess) Resume() error { return nil }

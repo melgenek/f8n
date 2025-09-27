@@ -138,10 +138,7 @@ func (f *FDB) startWatch() (chan interface{}, error) {
 
 func (f *FDB) poll(result chan interface{}, pollStart int64) {
 	f.backgroundReadWg.Add(1)
-	defer func() {
-		logrus.Warn("Done3")
-		f.backgroundReadWg.Done()
-	}()
+	defer f.backgroundReadWg.Done()
 	f.lastWatchRev.Store(pollStart)
 
 	defer close(result)

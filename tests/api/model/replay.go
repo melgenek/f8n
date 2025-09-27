@@ -22,7 +22,7 @@ import (
 
 func NewReplay(persistedRequests []model.EtcdRequest) *EtcdReplay {
 	state := freshEtcdState()
-	// Padding for index 0 and 1, so index matches revision..
+	// Padding for index 0 and 1, so the index matches the revision.
 	revisionToEtcdState := []EtcdState{state, state}
 	var events []model.PersistedEvent
 	for _, request := range persistedRequests {

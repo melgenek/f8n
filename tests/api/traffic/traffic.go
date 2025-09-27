@@ -33,17 +33,15 @@ import (
 	"go.etcd.io/etcd/tests/v3/robustness/report"
 )
 
-func SimulateTraffic(ctx context.Context, t *testing.T, lg *zap.Logger, clus *e2e.EtcdProcessCluster, profile traffic.Profile, tf traffic.Traffic, failpointInjected <-chan report.FailpointInjection, baseTime time.Time, ids identity.Provider) []report.ClientReport {
-	mux := sync.Mutex{}
+func SimulateTraffic(ctx context.Context, t *testing.T, lg *zap.Logger, clus *e2e.EtcdProcessCluster, profile traffic.Profile, tf traffic.Traffic, failpointInjected <-chan report.FailpointInjection, clientSet *client.ClientSet) []report.ClientReport {
 	endpoints := clus.EndpointsGRPC()
 
 	lm := identity.NewLeaseIDStorage()
 	// Use the highest MaximalQPS of all traffic profiles as burst otherwise actual traffic may be accidentally limited
 	limiter := rate.NewLimiter(rate.Limit(profile.MaximalQPS), profile.BurstableQPS)
 
-	r, err := traffic.CheckEmptyDatabaseAtStart(ctx, lg, endpoints, ids, baseTime)
+	err := traffic.CheckEmptyDatabaseAtStart(ctx, lg, endpoints, clientSet)
 	require.NoError(t, err)
-	reports := []report.ClientReport{r}
 
 	wg := sync.WaitGroup{}
 	nonUniqueWriteLimiter := traffic.NewConcurrencyLimiter(profile.MaxNonUniqueRequestConcurrency)
@@ -52,24 +50,50 @@ func SimulateTraffic(ctx context.Context, t *testing.T, lg *zap.Logger, clus *e2
 	keyStore := traffic.NewKeyStore(10, "key")
 
 	lg.Info("Start traffic")
-	startTime := time.Since(baseTime)
-	for i := 0; i < profile.ClientCount; i++ {
+	startTime := time.Since(clientSet.BaseTime())
+	for i := range profile.MemberClientCount {
 		wg.Add(1)
-		c, nerr := client.NewRecordingClient([]string{endpoints[i%len(endpoints)]}, ids, baseTime)
+
+		c, nerr := clientSet.NewClient([]string{endpoints[i%len(endpoints)]})
 		require.NoError(t, nerr)
 		go func(c *client.RecordingClient) {
 			defer wg.Done()
 			defer c.Close()
 
-			tf.RunTrafficLoop(ctx, c, limiter, ids, lm, nonUniqueWriteLimiter, keyStore, finish)
-			mux.Lock()
-			reports = append(reports, c.Report())
-			mux.Unlock()
+			tf.RunTrafficLoop(ctx, traffic.RunTrafficLoopParam{
+				Client:                             c,
+				QPSLimiter:                         limiter,
+				IDs:                                clientSet.IdentityProvider(),
+				LeaseIDStorage:                     lm,
+				NonUniqueRequestConcurrencyLimiter: nonUniqueWriteLimiter,
+				KeyStore:                           keyStore,
+				Finish:                             finish,
+			})
+		}(c)
+	}
+	for range profile.ClusterClientCount {
+		wg.Add(1)
+
+		c, nerr := clientSet.NewClient(endpoints)
+		require.NoError(t, nerr)
+		go func(c *client.RecordingClient) {
+			defer wg.Done()
+			defer c.Close()
+
+			tf.RunTrafficLoop(ctx, traffic.RunTrafficLoopParam{
+				Client:                             c,
+				QPSLimiter:                         limiter,
+				IDs:                                clientSet.IdentityProvider(),
+				LeaseIDStorage:                     lm,
+				NonUniqueRequestConcurrencyLimiter: nonUniqueWriteLimiter,
+				KeyStore:                           keyStore,
+				Finish:                             finish,
+			})
 		}(c)
 	}
 	if !profile.ForbidCompaction {
 		wg.Add(1)
-		c, nerr := client.NewRecordingClient(endpoints, ids, baseTime)
+		c, nerr := clientSet.NewClient(endpoints)
 		if nerr != nil {
 			t.Fatal(nerr)
 		}
@@ -82,10 +106,11 @@ func SimulateTraffic(ctx context.Context, t *testing.T, lg *zap.Logger, clus *e2
 				compactionPeriod = profile.CompactPeriod
 			}
 
-			tf.RunCompactLoop(ctx, c, compactionPeriod, finish)
-			mux.Lock()
-			reports = append(reports, c.Report())
-			mux.Unlock()
+			tf.RunCompactLoop(ctx, traffic.RunCompactLoopParam{
+				Client: c,
+				Period: compactionPeriod,
+				Finish: finish,
+			})
 		}(c)
 	}
 	var fr *report.FailpointInjection
@@ -99,11 +124,11 @@ func SimulateTraffic(ctx context.Context, t *testing.T, lg *zap.Logger, clus *e2
 	close(finish)
 	wg.Wait()
 	lg.Info("Finished traffic")
-	endTime := time.Since(baseTime)
+	endTime := time.Since(clientSet.BaseTime())
 
 	time.Sleep(time.Second)
 	// Ensure that last operation succeeds
-	cc, err := client.NewRecordingClient(endpoints, ids, baseTime)
+	cc, err := clientSet.NewClient(endpoints)
 	require.NoError(t, err)
 	defer cc.Close()
 
@@ -113,8 +138,7 @@ func SimulateTraffic(ctx context.Context, t *testing.T, lg *zap.Logger, clus *e2
 	_, err = kc.OptimisticPut(ctx, "/tombstone", []byte("true"), 0, kubernetes.PutOptions{})
 	require.NoErrorf(t, err, "First operation failed, validation requires first operation to succeed")
 
-	reports = append(reports, cc.Report())
-
+	reports := clientSet.Reports()
 	totalStats := traffic.CalculateStats(reports, startTime, endTime)
 	beforeFailpointStats := traffic.CalculateStats(reports, startTime, fr.Start)
 	duringFailpointStats := traffic.CalculateStats(reports, fr.Start, fr.End)
@@ -125,9 +149,12 @@ func SimulateTraffic(ctx context.Context, t *testing.T, lg *zap.Logger, clus *e2
 	lg.Info("Reporting traffic during failure injection", zap.Int("successes", duringFailpointStats.Successes), zap.Int("failures", duringFailpointStats.Failures), zap.Float64("successRate", duringFailpointStats.SuccessRate()), zap.Duration("period", duringFailpointStats.Period), zap.Float64("qps", duringFailpointStats.QPS()))
 	lg.Info("Reporting traffic after failure injection", zap.Int("successes", afterFailpointStats.Successes), zap.Int("failures", afterFailpointStats.Failures), zap.Float64("successRate", afterFailpointStats.SuccessRate()), zap.Duration("period", afterFailpointStats.Period), zap.Float64("qps", afterFailpointStats.QPS()))
 
+	watchTotal := traffic.CalculateWatchStats(reports, startTime, endTime)
+	lg.Info("Reporting complete watch", zap.Int("requests", watchTotal.Requests), zap.Int("events", watchTotal.Events), zap.Float64("eventsQPS", watchTotal.EventsQPS()), zap.Int("progressNotifies", watchTotal.ProgressNotifies), zap.Int("immediateClosures", watchTotal.ImmediateClosures), zap.Duration("period", watchTotal.Period), zap.Duration("avgDuration", watchTotal.AvgDuration()))
+
 	if beforeFailpointStats.QPS() < profile.MinimalQPS {
 		t.Errorf("Requiring minimal %f qps before failpoint injection for test results to be reliable, got %f qps", profile.MinimalQPS, beforeFailpointStats.QPS())
 	}
-	// TODO: Validate QPS post failpoint injection to ensure the that we sufficiently cover period when cluster recovers.
+	// TODO: Validate QPS post failpoint injection to ensure that we sufficiently cover the period when the cluster recovers.
 	return reports
 }

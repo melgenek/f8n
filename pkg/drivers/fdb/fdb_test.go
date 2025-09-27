@@ -199,7 +199,7 @@ func TestFDB(t *testing.T) {
 			rev, result, err = f.List(ctx, "/abc/", "/registry/health", 0, 1, false)
 			require.NoError(t, err)
 			require.Empty(t, result)
-			require.Equal(t, rev, int64(1))
+			require.LessOrEqual(t, nextRev, rev)
 
 			fmt.Printf("%d\n", i)
 		}

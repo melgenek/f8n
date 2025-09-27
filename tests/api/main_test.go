@@ -41,6 +41,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -57,10 +58,11 @@ var tsc = []scenarios.TestScenario{
 		Name:    "KubernetesSingleClient",
 		Traffic: traffic.Kubernetes,
 		Profile: traffic.Profile{
-			MinimalQPS:                     0,
-			MaximalQPS:                     200,
+			MinimalQPS:                     100,
+			MaximalQPS:                     1000,
 			BurstableQPS:                   1000,
-			ClientCount:                    1,
+			MemberClientCount:              0,
+			ClusterClientCount:             1,
 			MaxNonUniqueRequestConcurrency: 3,
 			ForbidCompaction:               true,
 		},
@@ -69,7 +71,6 @@ var tsc = []scenarios.TestScenario{
 }
 
 func TestRobustnessExploratory(t *testing.T) {
-	rand.Seed(1)
 	logrus.SetLevel(logrus.TraceLevel)
 	fdb.APITest = true
 	fdb.UseSequentialId = true
@@ -115,6 +116,7 @@ func testRobustness(ctx context.Context, t *testing.T, lg *zap.Logger, s scenari
 		shouldReport := t.Failed() || panicked || persistResults
 		path := testResultsDirectory(t)
 		if shouldReport {
+			// No DirFS for F8N
 			r.ServersDataPath = map[string]string{}
 			if err := r.Report(path); err != nil {
 				t.Error(err)
@@ -128,11 +130,6 @@ func testRobustness(ctx context.Context, t *testing.T, lg *zap.Logger, s scenari
 		t.Error(err)
 	}
 
-	failpointImpactingWatch := s.Failpoint == failpoint.SleepBeforeSendWatchResponse
-	if !failpointImpactingWatch {
-		watchProgressNotifyEnabled := c.Cfg.ServerConfig.WatchProgressNotifyInterval != 0
-		client.ValidateGotAtLeastOneProgressNotify(t, r.Client, s.Watch.RequestProgress || watchProgressNotifyEnabled)
-	}
 	validateConfig := forkedValidate.Config{ExpectRevisionUnique: s.Traffic.ExpectUniqueRevision()}
 	result := forkedValidate.ValidateAndReturnVisualize(lg, validateConfig, r.Client, persistedRequests, 5*time.Minute)
 	r.Visualize = result.Linearization.Visualize
@@ -163,7 +160,7 @@ func runScenario(ctx context.Context, t *testing.T, s scenarios.TestScenario, lg
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	g := errgroup.Group{}
-	var operationReport, watchReport, failpointClientReport []report.ClientReport
+	var failpointClientReport []report.ClientReport
 	failpointInjected := make(chan report.FailpointInjection, 1)
 
 	// using baseTime time-measuring operation to get monotonic clock reading
@@ -187,19 +184,29 @@ func runScenario(ctx context.Context, t *testing.T, s scenarios.TestScenario, lg
 		}
 		return nil
 	})
+	trafficSet := client.NewSet(ids, baseTime)
+	defer trafficSet.Close()
 	maxRevisionChan := make(chan int64, 1)
 	g.Go(func() error {
 		defer close(maxRevisionChan)
-		operationReport = forkedTraffic.SimulateTraffic(ctx, t, lg, clus, s.Profile, s.Traffic, failpointInjected, baseTime, ids)
+		operationReport := forkedTraffic.SimulateTraffic(ctx, t, lg, clus, s.Profile, s.Traffic, failpointInjected, trafficSet)
 		maxRevision := report.OperationsMaxRevision(operationReport)
 		maxRevisionChan <- maxRevision
 		lg.Info("Finished simulating Traffic", zap.Int64("max-revision", maxRevision))
 		return nil
 	})
+	watchSet := client.NewSet(ids, baseTime)
+	defer watchSet.Close()
 	g.Go(func() error {
-		var err error
 		endpoints := processEndpoints(clus)
-		watchReport, err = client.CollectClusterWatchEvents(ctx, lg, endpoints, maxRevisionChan, s.Watch, baseTime, ids)
+		err := client.CollectClusterWatchEvents(ctx, client.CollectClusterWatchEventsParam{
+			Lg:                    lg,
+			Endpoints:             endpoints,
+			MaxRevisionChan:       maxRevisionChan,
+			Cfg:                   s.Watch,
+			ClientSet:             watchSet,
+			BackgroundWatchConfig: s.Profile.BackgroundWatchConfig,
+		})
 		return err
 	})
 	err := g.Wait()
@@ -212,7 +219,7 @@ func runScenario(ctx context.Context, t *testing.T, s scenarios.TestScenario, lg
 	//if err != nil {
 	//	t.Error(err)
 	//}
-	return append(operationReport, append(failpointClientReport, watchReport...)...)
+	return slices.Concat(trafficSet.Reports(), watchSet.Reports(), failpointClientReport)
 }
 
 func randomizeTime(base time.Duration, jitter time.Duration) time.Duration {

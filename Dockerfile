@@ -2,7 +2,7 @@
 FROM tonistiigi/xx AS xx
 
 # --- multi-arch build stage ---
-FROM golang:1.24-bookworm AS base
+FROM golang:1.25-bookworm AS base
 COPY --from=xx / /
 ARG TAG
 ARG TARGETOS
@@ -11,7 +11,7 @@ ENV TAG=${TAG} CGO_ENABLED=1
 
 ENV SRC_DIR=/go/src/github.com/melgenek/f8n
 WORKDIR ${SRC_DIR}/
-COPY ./go.mod ./go.sum ./main.go ./
+COPY ./go.mod ./go.sum ./go.work ./go.work.sum ./main.go ./
 COPY ./pkg ./pkg
 COPY ./tests/api ./tests/api
 COPY ./.golangci.json ./.golangci.json

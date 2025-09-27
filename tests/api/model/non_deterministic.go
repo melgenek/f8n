@@ -17,17 +17,18 @@ package model
 import (
 	"cmp"
 	"fmt"
-	"github.com/anishathalye/porcupine"
 	gocmp "github.com/google/go-cmp/cmp"
 	"go.etcd.io/etcd/tests/v3/robustness/model"
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/anishathalye/porcupine"
 )
 
-// NonDeterministicModel extends DeterministicModel to allow for clients with imperfect knowledge of request destiny.
-// Unknown/error response doesn't inform whether request was persisted or not, so model
-// considers both cases. This is represented as multiple equally possible deterministic states.
+// NonDeterministicModel extends DeterministicModel to allow for clients with imperfect knowledge of the request's destiny.
+// An unknown/error response doesn't inform whether the request was persisted or not, so the model
+// considers both cases. This is represented as multiple, equally possible deterministic states.
 // Failed requests fork the possible states, while successful requests merge and filter them.
 var NonDeterministicModel = porcupine.Model{
 	Init: func() any {

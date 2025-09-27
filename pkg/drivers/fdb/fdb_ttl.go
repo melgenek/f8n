@@ -29,19 +29,13 @@ func (f *FDB) ttl(ctx context.Context) {
 	ttlEventKVMap := make(map[string]*ttlEventKV)
 	go func() {
 		f.backgroundReadWg.Add(1)
-		defer func() {
-			logrus.Warn("Done1")
-			f.backgroundReadWg.Done()
-		}()
+		defer f.backgroundReadWg.Done()
 		for f.handleTTLEvents(ctx, rwMutex, queue, ttlEventKVMap) {
 		}
 	}()
 
 	f.backgroundReadWg.Add(1)
-	defer func() {
-		logrus.Warn("Done2")
-		f.backgroundReadWg.Done()
-	}()
+	defer f.backgroundReadWg.Done()
 	for {
 		select {
 		case <-ctx.Done():
