@@ -8,7 +8,9 @@ var (
 	Directory          = "etcd"
 	CleanDirOnStart    = false
 	LogConflictingKeys = false
-	
+	// https://github.com/kubernetes/kubernetes/blob/master/cluster/images/etcd/migrate/options.go#L49C27-L50
+	EtcdDataPrefix = "/registry"
+
 	// For testing only
 	UseSequentialId = false
 	APITest         = false
@@ -31,6 +33,12 @@ func ConfigFlags() []cli.Flag {
 			Name:        "fdb-log-conflicting-keys",
 			Usage:       "Log conflicting keys when a transaction conflict occurs. Useful for debugging.",
 			Destination: &LogConflictingKeys,
+		},
+		&cli.StringFlag{
+			Name:        "etcd-data-prefix",
+			Usage:       "The value of the 'etcd-data-prefix' or env var 'ETCD_DATA_PREFIX' in the API server. Default: /registry",
+			Destination: &EtcdDataPrefix,
+			EnvVars:     []string{"ETCD_DATA_PREFIX"},
 		},
 	}
 }

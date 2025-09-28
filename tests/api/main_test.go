@@ -55,14 +55,14 @@ var (
 
 var tsc = []scenarios.TestScenario{
 	{
-		Name:    "KubernetesSingleClient",
+		Name:    "KubernetesHighTrafficProfile",
 		Traffic: traffic.Kubernetes,
 		Profile: traffic.Profile{
 			MinimalQPS:                     100,
 			MaximalQPS:                     1000,
 			BurstableQPS:                   1000,
-			MemberClientCount:              0,
-			ClusterClientCount:             1,
+			MemberClientCount:              6,
+			ClusterClientCount:             2,
 			MaxNonUniqueRequestConcurrency: 3,
 			ForbidCompaction:               true,
 		},
@@ -71,7 +71,7 @@ var tsc = []scenarios.TestScenario{
 }
 
 func TestRobustnessExploratory(t *testing.T) {
-	logrus.SetLevel(logrus.TraceLevel)
+	logrus.SetLevel(logrus.WarnLevel)
 	fdb.APITest = true
 	fdb.UseSequentialId = true
 	fdb.CleanDirOnStart = true

@@ -5,9 +5,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 	"math"
+	"strings"
 )
 
 func revRecordToEvent(revRecord *RevRecord) *server.Event {
@@ -98,4 +101,18 @@ func WaitForFutureNil(f fdb.FutureNil) <-chan error {
 		res <- err
 	}()
 	return res
+}
+
+func extractResourceType(key string) string {
+	trimmed := strings.Trim(key, "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) > 1 && "/"+parts[0] == EtcdDataPrefix {
+		return parts[1]
+	} else {
+		return "default"
+	}
+}
+
+func createSerializabilityConflictKey(dir directory.DirectorySubspace, key string) subspace.Subspace {
+	return dir.Sub("serializability").Sub(extractResourceType(key))
 }

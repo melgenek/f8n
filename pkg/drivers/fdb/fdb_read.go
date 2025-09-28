@@ -202,20 +202,25 @@ func (c *listCollector) String() string {
 }
 
 type recordCollector struct {
-	f                  *FDB
-	maxRevision        int64
-	inner              Processor[*ByKeyAndRevisionRecord]
+	// Input
+	f           *FDB
+	maxRevision int64
+	inner       Processor[*ByKeyAndRevisionRecord]
+	conflictKey fdb.KeyConvertible
+
+	// Output
 	currentRecord      *ByKeyAndRevisionRecord
 	batchCurrentRecord *ByKeyAndRevisionRecord
 	rev                int64
 	batchRev           int64
 }
 
-func newRecordCollector(f *FDB, maxRevision int64, inner Processor[*ByKeyAndRevisionRecord]) *recordCollector {
+func newRecordCollector(f *FDB, maxRevision int64, inner Processor[*ByKeyAndRevisionRecord], prefix string) *recordCollector {
 	return &recordCollector{
 		f:           f,
 		maxRevision: maxRevision,
 		inner:       inner,
+		conflictKey: createSerializabilityConflictKey(f.dir, prefix),
 	}
 }
 
@@ -244,7 +249,7 @@ func (c *recordCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.
 	}
 
 	recordRev := VersionstampToInt64(nextKeyAndRevRecord.Key.Rev)
-	if (c.maxRevision == 0 || recordRev <= c.maxRevision) && (c.rev == 0 || recordRev <= c.rev) {
+	if c.maxRevision == 0 || recordRev <= c.maxRevision {
 		c.batchCurrentRecord = nextKeyAndRevRecord
 	}
 
@@ -262,16 +267,12 @@ func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
 		return err
 	}
 
-	// Get the read revision for the first batch.
-	// Do not read records that might've been concurrently added that are over this revision.
-	if c.rev == 0 {
-		if latestRevF, err := c.f.rev.GetLatestRev(tr); err != nil {
-			return err
-		} else if rev, err := latestRevF.Get(); err != nil {
-			return err
-		} else {
-			c.batchRev = rev
-		}
+	if latestRevF, err := c.f.rev.GetLatestRev(tr); err != nil {
+		return err
+	} else if rev, err := latestRevF.Get(); err != nil {
+		return err
+	} else {
+		c.batchRev = rev
 	}
 
 	// The requested revision has been compacted
@@ -345,7 +346,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 		begin, end = k.FDBRangeKeySelectors()
 	}
 
-	rc := newRecordCollector(f, maxRevision, collector)
+	rc := newRecordCollector(f, maxRevision, collector, prefix)
 	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, rc)
 	if err != nil {
 		return 0, err

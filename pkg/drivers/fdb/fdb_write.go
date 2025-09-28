@@ -279,5 +279,20 @@ func (f *FDB) append(tr *fdb.Transaction, record *Record) (fdb.FutureKey, tuple.
 		return nil, uuid, err
 	}
 
+	// https://jepsen.io/analyses/etcd-3.4.3#consistency-documentation
+	// https://etcd.io/docs/v3.3/learning/api_guarantees/
+	// https://muratbuffalo.blogspot.com/2022/08/strict-serializability-but-at-what-cost.html
+	// https://docs.google.com/document/d/1NUZDiJeiIH5vo_FMaTWf0JtrQKCx0kpEaIIuPoj9P6A/edit?tab=t.0
+	// https://aws.amazon.com/blogs/containers/under-the-hood-amazon-eks-ultra-scale-clusters/
+	// https://github.com/kubernetes/kubernetes/blob/0bdf1f89c3a2eeac2a64ca29b93f552a4b601341/staging/src/k8s.io/apiserver/pkg/storage/etcd3/linearized_read_test.go#L51
+	// https://forums.foundationdb.org/t/go-lang-addreadconflictkey-addwriteconflictkey/1842/2
+	conflictKey := createSerializabilityConflictKey(f.dir, record.Key)
+	if err := tr.AddReadConflictKey(conflictKey); err != nil {
+		return nil, uuid, err
+	}
+	if err := tr.AddWriteConflictKey(conflictKey); err != nil {
+		return nil, uuid, err
+	}
+
 	return revFuture, uuid, nil
 }
