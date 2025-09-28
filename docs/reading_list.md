@@ -16,7 +16,6 @@
 - https://github.com/k3s-io/kine/issues/386#issuecomment-2552695321
 - https://github.com/apple/foundationdb/wiki/An-Overview-how-Watches-Work
 - https://forums.foundationdb.org/t/changefeeds-watching-and-getting-updates-on-ranges-of-keys/511/8
-- https://forums.foundationdb.org/t/go-lang-addreadconflictkey-addwriteconflictkey/1842/3
 - https://forums.foundationdb.org/t/api-for-transaction-size/1367/6
 - https://forums.foundationdb.org/t/transaction-size-limit-calculation/811/3
 - https://forums.foundationdb.org/t/foundationdb-read-performance/729/4
@@ -42,4 +41,4 @@
 - https://activesphere.com/blog/2018/08/17/order-preserving-serialization
 - https://activesphere.com/blog/2018/08/05/high-contention-allocator
 - https://forums.foundationdb.org/t/how-to-minimize-transaction-conflicts-on-atomic-operations/1051/3
-- 
+- https://forums.foundationdb.org/t/java-why-is-setreadversion-not-part-of-readtransaction-readsnapshot/646/11

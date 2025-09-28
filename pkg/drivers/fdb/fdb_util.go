@@ -56,17 +56,15 @@ func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 		dur := time.Since(before)
 
 		if dur > 2*splitRangeAfterDuration {
-			logrus.Warnf("BATCH %s => duration=%s", selector, dur)
+			logrus.Debugf("BATCH %s => duration=%s", selector, dur)
 		}
 	}()
 
-	res, err := transact(db, batchResult{}, func(tr fdb.Transaction) (batchResult, error) {
+	res, err := transact("batch", db, batchResult{}, func(tr fdb.Transaction) (batchResult, error) {
 		res := batchResult{collectorNeedsMore: true}
 
 		start := time.Now()
-		// Snapshot read does not add read conflict ranges
-		// https://forums.foundationdb.org/t/java-why-is-setreadversion-not-part-of-readtransaction-readsnapshot/646/11
-		it := tr.Snapshot().GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
+		it := tr.GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
 
 		collector.startBatch()
 		for i := 0; res.collectorNeedsMore; i++ {
@@ -93,20 +91,25 @@ func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 	return res, err
 }
 
-func transact[T any](d fdb.Database, defaultValue T, f func(fdb.Transaction) (T, error)) (T, error) {
+func transact[T any](name string, d fdb.Database, defaultValue T, f func(fdb.Transaction) (T, error)) (T, error) {
 	tr, e := d.CreateTransaction()
 	// Any error here is non-retryable
 	if e != nil {
 		return defaultValue, fmt.Errorf("failed to create a transaction: %w", e)
 	}
 
+	i := 0
 	wrapped := func() (T, error) {
+		if i > 0 {
+			logrus.Tracef("Retrying '%v'", name)
+		}
 		defer panicToError(&e)
 
 		if err := tr.Options().SetTimeout(transactionTimeout.Milliseconds()); err != nil {
 			return defaultValue, fmt.Errorf("failed to set timeout limit: %w", err)
 		}
 
+		// Transactions retry infinitely by default.
 		// https://forums.foundationdb.org/t/defaults-for-transaction-timeouts-and-retries/315/2
 		e = tr.Options().SetRetryLimit(transactionMaxRetryCount)
 		if e != nil {
@@ -126,6 +129,7 @@ func transact[T any](d fdb.Database, defaultValue T, f func(fdb.Transaction) (T,
 			e = tr.Commit().Get()
 		}
 
+		i++
 		if LogConflictingKeys {
 			var fe fdb.Error
 			if errors.As(e, &fe) && fe.Code == notCommittedErrorCode {
@@ -174,6 +178,7 @@ func retryable[T any](wrapped func() (T, error), onError func(fdb.Error) fdb.Fut
 		if e != nil {
 			return
 		}
+		logrus.Tracef("Retrying %v", ep)
 	}
 }
 

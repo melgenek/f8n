@@ -261,7 +261,7 @@ func TestFDB(t *testing.T) {
 
 	currentRev, err = f.CurrentRevision(ctx)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, history[len(history)-1].KV.ModRevision, currentRev)
+	require.LessOrEqual(t, history[len(history)-1].KV.ModRevision, currentRev)
 }
 
 func TestFDBLargeRecords(t *testing.T) {

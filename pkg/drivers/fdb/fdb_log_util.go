@@ -43,7 +43,7 @@ func followFile(file string) {
 		if err != nil {
 			return
 		}
-		logrus.Debug(strings.TrimRight(line, "\n"))
+		logrus.Trace(strings.TrimRight(line, "\n"))
 	}
 }
 

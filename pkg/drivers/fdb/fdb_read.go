@@ -20,7 +20,7 @@ func (f *FDB) CurrentRevision(_ context.Context) (int64, error) {
 	if lastWatchRev != 0 {
 		return lastWatchRev, nil
 	} else {
-		rev, err := transact(f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
+		rev, err := transact("current_rev", f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
 			if latestRev, err := f.rev.GetLatestRev(&tr); err != nil {
 				return 0, err
 			} else {
@@ -202,11 +202,15 @@ func (c *listCollector) String() string {
 }
 
 type recordCollector struct {
-	f                  *FDB
-	maxRevision        int64
-	inner              Processor[*ByKeyAndRevisionRecord]
+	// Input
+	f           *FDB
+	maxRevision int64
+	inner       Processor[*ByKeyAndRevisionRecord]
+
+	// Output
 	currentRecord      *ByKeyAndRevisionRecord
 	batchCurrentRecord *ByKeyAndRevisionRecord
+	firstRev           int64
 	rev                int64
 	batchRev           int64
 }
@@ -234,21 +238,24 @@ func (c *recordCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.
 		return nil, false, nil
 	}
 
+	needMore := true
 	if c.batchCurrentRecord != nil && c.batchCurrentRecord.Key.Key != nextKeyAndRevRecord.Key.Key {
 		if !c.batchCurrentRecord.Value.IsDelete {
-			if _, _, err := c.inner.next(tr, c.batchCurrentRecord); err != nil {
+			if _, innerNeedMore, err := c.inner.next(tr, c.batchCurrentRecord); err != nil {
 				return nil, false, err
+			} else {
+				needMore = innerNeedMore
 			}
 		}
 		c.batchCurrentRecord = nil
 	}
 
 	recordRev := VersionstampToInt64(nextKeyAndRevRecord.Key.Rev)
-	if (c.maxRevision == 0 || recordRev <= c.maxRevision) && (c.rev == 0 || recordRev <= c.rev) {
+	if (c.maxRevision == 0 || recordRev <= c.maxRevision) && (c.firstRev == 0 || recordRev <= c.firstRev) {
 		c.batchCurrentRecord = nextKeyAndRevRecord
 	}
 
-	return c.f.byKeyAndRevision.GetSubspace().Pack(tuple.Tuple{nextKeyAndRevRecord.Key.Key, nextKeyAndRevRecord.Key.Rev}), true, nil
+	return c.f.byKeyAndRevision.GetSubspace().Pack(tuple.Tuple{nextKeyAndRevRecord.Key.Key, nextKeyAndRevRecord.Key.Rev}), needMore, nil
 }
 
 func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
@@ -264,14 +271,12 @@ func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
 
 	// Get the read revision for the first batch.
 	// Do not read records that might've been concurrently added that are over this revision.
-	if c.rev == 0 {
-		if latestRevF, err := c.f.rev.GetLatestRev(tr); err != nil {
-			return err
-		} else if rev, err := latestRevF.Get(); err != nil {
-			return err
-		} else {
-			c.batchRev = rev
-		}
+	if latestRevF, err := c.f.rev.GetLatestRev(tr); err != nil {
+		return err
+	} else if rev, err := latestRevF.Get(); err != nil {
+		return err
+	} else {
+		c.batchRev = rev
 	}
 
 	// The requested revision has been compacted
@@ -288,12 +293,15 @@ func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
 
 func (c *recordCollector) postBatch() {
 	c.inner.postBatch()
+	if c.firstRev == 0 {
+		c.firstRev = c.batchRev
+	}
 	c.rev = c.batchRev
 	c.currentRecord = c.batchCurrentRecord
 }
 
 func (c *recordCollector) String() string {
-	return fmt.Sprintf("{rev=%d, currentRecord=%v, inner=%v}", c.rev, c.currentRecord, c.inner)
+	return fmt.Sprintf("{firstRev=%d, rev=%d, currentRecord=%v, inner=%v}", c.firstRev, c.rev, c.currentRecord, c.inner)
 }
 
 func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int64, collector Processor[*ByKeyAndRevisionRecord]) (resRev int64, resErr error) {
@@ -307,8 +315,9 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 	// prefix=/registry/masterleases/172.17.0.2, startKey=/registry/masterleases/172.17.0.2
 	// prefix=/registry/clusterroles/system:aggregate-to-edit, startKey=/registry/clusterroles/system:aggregate-to-edit
 
+	logrus.Tracef("listWithCollector start (%s): prefix=%s, startKey=%s, maxRevision=%d", caller, prefix, startKey, maxRevision)
 	defer func() {
-		logrus.Tracef("listWithCollector (%s): prefix=%s, startKey=%s, maxRevision=%d => resRev=%d collector=%v resErr=%v", caller, prefix, startKey, maxRevision, resRev, collector, resErr)
+		logrus.Tracef("listWithCollector end (%s): prefix=%s, startKey=%s, maxRevision=%d => resRev=%d collector=%v resErr=%v", caller, prefix, startKey, maxRevision, resRev, collector, resErr)
 	}()
 
 	var begin, end fdb.Selectable
@@ -351,9 +360,12 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 		return 0, err
 	}
 
-	if maxRevision > rc.rev {
-		return rc.rev, server.ErrFutureRev
+	if maxRevision > rc.firstRev {
+		return rc.firstRev, server.ErrFutureRev
 	}
 
-	return rc.rev, nil
+	if rc.rev != rc.firstRev {
+		logrus.Warnf("listWithCollector serializable read (%s): rev=%s, startKey=%s, maxRevision=%d => firstRev=%v rev=%v", caller, prefix, startKey, maxRevision, rc.firstRev, rc.rev)
+	}
+	return rc.firstRev, nil
 }

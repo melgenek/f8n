@@ -248,7 +248,7 @@ func describeRangeResponse(request model.RangeOptions, response model.RangeRespo
 	if request.End != "" {
 		kvs := make([]string, len(response.KVs))
 		for i, kv := range response.KVs {
-			kvs[i] = describeValueOrHash(kv.Value)
+			kvs[i] = kv.Key + ":" + describeValueOrHash(kv.Value)
 		}
 		return fmt.Sprintf("[%s], count: %d", strings.Join(kvs, ","), response.Count)
 	}

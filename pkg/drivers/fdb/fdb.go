@@ -87,15 +87,15 @@ func (f *FDB) Start(ctx context.Context) error {
 		return err
 	}
 	f.db = db
-	//f.wg.Add(1)
-	//go func() {
-	//	defer f.wg.Done()
-	//	<-ctx.Done()
-	//	logrus.Warn("Closing db")
-	//	f.backgroundReadWg.Wait()
-	//	f.db.Close()
-	//	logrus.Warn("Closed db")
-	//}()
+	f.wg.Add(1)
+	go func() {
+		defer f.wg.Done()
+		<-ctx.Done()
+		logrus.Info("Closing db")
+		f.backgroundReadWg.Wait()
+		f.db.Close()
+		logrus.Info("Closed db")
+	}()
 
 	if err := f.db.Options().SetTransactionTimeout(transactionTimeout.Milliseconds()); err != nil {
 		return err
@@ -107,7 +107,7 @@ func (f *FDB) Start(ctx context.Context) error {
 	}
 
 	if CleanDirOnStart {
-		_, err = transact(db, 0, func(tr fdb.Transaction) (interface{}, error) {
+		_, err = transact("start", db, 0, func(tr fdb.Transaction) (interface{}, error) {
 			tr.ClearRange(f.dir)
 			return 0, nil
 		})
@@ -163,7 +163,7 @@ func (f *FDB) setTLSConfig() error {
 }
 
 func (f *FDB) DbSize(_ context.Context) (int64, error) {
-	result, err := transact(f.db, 0, func(tr fdb.Transaction) (int64, error) {
+	result, err := transact("db_size", f.db, 0, func(tr fdb.Transaction) (int64, error) {
 		return tr.GetEstimatedRangeSizeBytes(f.dir).Get()
 	})
 	return result, err

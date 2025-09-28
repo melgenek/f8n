@@ -150,7 +150,7 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 		default:
 		}
 
-		watchFuture, err := transact(f.db, nil, func(tr fdb.Transaction) (fdb.FutureNil, error) {
+		watchFuture, err := transact("watch", f.db, nil, func(tr fdb.Transaction) (fdb.FutureNil, error) {
 			return f.watch.Watch(&tr), nil
 		})
 		if err != nil {

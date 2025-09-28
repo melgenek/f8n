@@ -71,7 +71,7 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 	// Use a UUID to avoid duplicate writes in case of transaction retries.
 	// https://apple.github.io/foundationdb/automatic-idempotency.html
 	lastWriteUUID := createUUID()
-	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
+	res, err := transact("create", f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
 		if err := setFirstInBatch(&tr); err != nil {
 			return nil, err
 		}
@@ -129,7 +129,7 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 	}
 
 	lastWriteUUID := createUUID()
-	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
+	res, err := transact("update", f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
 		if err := setFirstInBatch(&tr); err != nil {
 			return nil, err
 		}
@@ -190,7 +190,7 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 
 func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *server.KeyValue, bool, error) {
 	lastWriteUUID := createUUID()
-	res, err := transact(f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
+	res, err := transact("delete", f.db, nil, func(tr fdb.Transaction) (*writeResult, error) {
 		if err := setFirstInBatch(&tr); err != nil {
 			return nil, err
 		}
