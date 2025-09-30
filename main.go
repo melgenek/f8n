@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/melgenek/f8n/pkg/app"
+	"github.com/k3s-io/kine/pkg/app"
 	"github.com/melgenek/f8n/pkg/drivers/fdb"
 	_ "github.com/melgenek/f8n/pkg/drivers/fdb"
 	"github.com/sirupsen/logrus"
