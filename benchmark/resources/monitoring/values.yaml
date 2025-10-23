@@ -1,0 +1,33 @@
+grafana:
+  enabled: true
+  defaultDashboardsEnabled: true
+
+  sidecar:
+    skipTlsVerify: true
+    dashboards:
+      enabled: true
+      # This label must match what kube-prometheus-stack uses internally
+      label: grafana_dashboard
+      searchNamespace: ALL
+      folder: /var/lib/grafana/dashboards
+    datasources:
+      enabled: true
+
+  tolerations: []
+  nodeSelector:
+    node-role: operators
+
+prometheus:
+  prometheusSpec:
+    tolerations: []
+    nodeSelector:
+      node-role: operators
+    volumeClaimTemplate:
+      spec:
+        storageClassName: openebs-hostpath
+        resources:
+          requests:
+            storage: 8Gi
+
+alertmanager:
+  enabled: false
