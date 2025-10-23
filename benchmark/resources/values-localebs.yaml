@@ -1,0 +1,20 @@
+engines:
+  local:
+    lvm:
+      enabled: false
+    zfs:
+      enabled: false
+    rawfile:
+      enabled: false
+  replicated:
+    mayastor:
+      enabled: false
+
+loki:
+  enabled: false
+
+alloy:
+  enabled: false
+
+minio:
+  enabled: false

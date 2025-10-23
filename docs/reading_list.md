@@ -42,3 +42,10 @@
 - https://activesphere.com/blog/2018/08/05/high-contention-allocator
 - https://forums.foundationdb.org/t/how-to-minimize-transaction-conflicts-on-atomic-operations/1051/3
 - https://forums.foundationdb.org/t/java-why-is-setreadversion-not-part-of-readtransaction-readsnapshot/646/11
+- https://forums.foundationdb.org/t/why-doesnt-my-cluster-performance-scale-when-i-double-the-number-of-machines/640/16
+- https://apple.github.io/foundationdb/performance.html
+- https://forums.foundationdb.org/t/production-optimizations/601/20
+- https://forums.foundationdb.org/t/ideal-setup-for-fault-tolerance-3-in-triple-mode/1520/3
+- https://pierrezemb.fr/posts/notes-about-foundationdb/
+- https://forums.foundationdb.org/t/transaction-operation-throughput/1880/7
+- https://forums.foundationdb.org/t/foundationdb-ram-requirements/1646/2

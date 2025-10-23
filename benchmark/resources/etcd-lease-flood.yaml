@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: etcd-lease-flood
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etcd-lease-flood
+  namespace: etcd-lease-flood
+  labels:
+    app: etcd-lease-flood
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etcd-lease-flood
+  template:
+    metadata:
+      labels:
+        app: etcd-lease-flood
+    spec:
+      containers:
+        - name: etcd-lease-flood
+          image: fra.vultrcr.com/f8ntest/lease-flood:0.0.1
+          command: ["/etcd-lease-flood"]
+          args: [
+            "--endpoints=f8n-service.fdb-operator:2379"
+          ]

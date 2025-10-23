@@ -3,12 +3,12 @@ mod-tidy:
 	go mod tidy && go work sync
 
 .PHONY: build
-PLATFORMS = linux/arm64
+PLATFORMS = linux/amd64
 build:
 	docker buildx build --progress=plain \
 		--platform=$(PLATFORMS) \
 		--target=package \
-		-t f8n:latest .
+		-t fra.vultrcr.com/f8ntest/f8n:0.7.0 .
 
 .PHONY: run-tests
 run-tests:
