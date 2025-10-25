@@ -26,29 +26,35 @@ apply-openebs:
 	helm repo update
 	helm upgrade --install openebs openebs/openebs --namespace openebs --create-namespace --values ./resources/values-localebs.yaml
 
+.PHONY: apply-metrics-server
+apply-metrics-server:
+	@echo "Applying metrics-server..."
+	kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
 .PHONY: apply-fdb-operator
 apply-fdb-operator:
 	@echo "Applying FoundationDB Operator manifests..."
-	kubectl apply -f ./resources/foundationdb/cluster_crd.yaml
-	kubectl apply -f ./resources/foundationdb/backups_crd.yaml
-	kubectl apply -f ./resources/foundationdb/restores_crd.yaml
-	kubectl apply -f ./resources/foundationdb/operator.yaml
+	kubectl apply -f ./resources/fdb-operator
 
 .PHONY: apply-fdb
 apply-fdb:
 	@echo "Applying FoundationDB cluster..."
-	kubectl apply -f ./resources/foundationdb/cluster.yaml
+	kubectl apply -f ./resources/fdb-cluster
 
-.PHONY: apply-k8s
-apply-k8s: apply-openebs apply-fdb-operator apply-fdb
-	@echo "Applying K8S..."
+.PHONY: apply-fdb-exporter
+apply-fdb-exporter:
+	@echo "Applying FoundationDB exporter..."
+	kubectl apply -f ./fdb-exporter/manifests
 
 .PHONY: apply-monitoring
 apply-monitoring:
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	helm repo update
-	#kubectl create configmap custom-dashboards --from-file=benchmark/resources/monitoring/custom-dashboard.json --dry-run=client -o yaml | kubectl apply -f -
 	helm upgrade --install monitoring prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace --values ./resources/monitoring/values.yaml
+
+.PHONY: apply-k8s
+apply-k8s:  apply-openebs apply-fdb-operator apply-monitoring apply-fdb-exporter apply-fdb
+	@echo "Applying K8S..."
 
 .PHONY: proxy-grafana
 proxy-grafana:
@@ -56,7 +62,7 @@ proxy-grafana:
 	@kubectl -n monitoring get secret monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 --decode; echo
 	@export POD_NAME=$$(kubectl -n monitoring get pods -l "app.kubernetes.io/name=grafana,app.kubernetes.io/instance=monitoring" -o jsonpath="{.items[0].metadata.name}"); \
 	echo "Forwarding Grafana pod $$POD_NAME on http://localhost:3000"; \
-	kubectl -n monitoring port-forward $$POD_NAME 3000:3000
+	kubectl port-forward -n monitoring $$POD_NAME 3000:3000
 
 .PHONY: apply-f8n
 apply-f8n:

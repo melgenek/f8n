@@ -20,8 +20,8 @@ grafana:
 prometheus:
   prometheusSpec:
     tolerations: []
-    nodeSelector:
-      node-role: operators
+#    nodeSelector:
+#      node-role: operators
     volumeClaimTemplate:
       spec:
         storageClassName: openebs-hostpath

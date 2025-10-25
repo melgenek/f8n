@@ -5,27 +5,27 @@ resource "vultr_kubernetes" "test" {
 
   node_pools {
     label      = "operator-pool"
-    plan       = "vc2-2c-2gb"
-    node_quantity = 1
+    plan       = "voc-c-2c-4gb-75s"
+    node_quantity = 3
     auto_scaler = false
     min_nodes = 1
-    max_nodes = 1
+    max_nodes = 3
     labels = {
       node-role = "operators"
     }
   }
 }
 
-resource "vultr_kubernetes_node_pools" "fdb_node_pool" {
-  cluster_id = vultr_kubernetes.test.id
-  label      = "fdb-pool"
-  plan       = "voc-c-2c-4gb-75s"
-  node_quantity = 2
-  auto_scaler = false
-  min_nodes = 2
-  max_nodes = 2
-  tag       = "fdb-pool"
-  labels = {
-    node-role = "fdb"
-  }
-}
+# resource "vultr_kubernetes_node_pools" "fdb_node_pool" {
+#   cluster_id = vultr_kubernetes.test.id
+#   label      = "fdb-pool"
+#   plan       = "voc-c-2c-4gb-75s"
+#   node_quantity = 2
+#   auto_scaler = false
+#   min_nodes = 2
+#   max_nodes = 2
+#   tag       = "fdb-pool"
+#   labels = {
+#     node-role = "fdb"
+#   }
+# }

@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fdb-exporter
+  namespace: fdb-operator
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fdb-exporter
+  namespace: fdb-operator
+  labels:
+    app: fdb-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fdb-exporter
+  template:
+    metadata:
+      labels:
+        app: fdb-exporter
+    spec:
+      serviceAccountName: fdb-exporter
+      containers:
+        - name: fdb-exporter
+          image: fra.vultrcr.com/f8ntest/fdb-exporter:0.0.1
+          ports:
+            - name: metrics
+              containerPort: 9444
+          env:
+            # Path to the FoundationDB cluster file (mounted below)
+            - name: FDB_CLUSTER_FILE
+              value: /etc/foundationdb/fdb.cluster
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/foundationdb/fdb.cluster
+              subPath: cluster-file
+      volumes:
+        - name: config-volume
+          configMap:
+            name: test-cluster-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fdb-exporter
+  namespace: fdb-operator
+  labels:
+    app: fdb-exporter
+spec:
+  ports:
+    - name: metrics
+      port: 9444
+      targetPort: 9444
+  selector:
+    app: fdb-exporter
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fdb-exporter
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: fdb-exporter
+  namespaceSelector:
+    matchNames:
+      - fdb-operator
+  endpoints:
+    - port: metrics
+      interval: 15s
