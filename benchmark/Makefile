@@ -39,7 +39,7 @@ apply-fdb-operator:
 .PHONY: apply-fdb
 apply-fdb:
 	@echo "Applying FoundationDB cluster..."
-	kubectl apply -f ./resources/fdb-cluster
+	kubectl apply -f ./resources/fdb.yaml
 
 .PHONY: apply-fdb-exporter
 apply-fdb-exporter:
