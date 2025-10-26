@@ -1,40 +1,58 @@
-.PHONY: inittf
-inittf:
+.PHONY: initgke
+initgke:
+	terraform -chdir=terraform-gke init
+
+.PHONY: plangke
+plangke: initgke
+	terraform -chdir=terraform-gke plan
+
+.PHONY: applygke
+applygke: initgke
+	terraform -chdir=terraform-gke apply
+
+.PHONY: destroygke
+destroygke: initgke
+	terraform -chdir=terraform-gke destroy -auto-approve
+
+.PHONY: logingke
+logingke:
+	@echo "Logging into Kubernetes..."
+	@bash -c "$$(terraform -chdir=terraform-gke output -raw kubeconfig)"
+
+.PHONY: initvultr
+initvultr:
 	terraform -chdir=terraform-vultr init
 
-.PHONY: plantf
-plantf: inittf
+.PHONY: planvultr
+planvultr: initvultr
 	terraform -chdir=terraform-vultr plan
 
-.PHONY: applytf
-applytf: inittf
+.PHONY: applyvultr
+applyvultr: initvultr
 	terraform -chdir=terraform-vultr apply -auto-approve
 
-.PHONY: destroytf
-destroytf: inittf
+.PHONY: destroyvultr
+destroyvultr: initvultr
 	terraform -chdir=terraform-vultr destroy -auto-approve
 
-.PHONY: logink8s
-logink8s:
+.PHONY: loginvultr
+loginvultr:
 	@echo "Logging into Kubernetes..."
 	terraform -chdir=terraform-vultr output -raw kube_config | base64 --decode > ~/.kube/config
 
 .PHONY: apply-openebs
 apply-openebs:
 	@echo "Applying openebs..."
-	helm repo add openebs https://openebs.github.io/openebs
-	helm repo update
+	#helm repo add openebs https://openebs.github.io/openebs
+	#helm repo update
+
+
 	helm upgrade --install openebs openebs/openebs --namespace openebs --create-namespace --values ./resources/values-localebs.yaml
 
-.PHONY: apply-metrics-server
-apply-metrics-server:
-	@echo "Applying metrics-server..."
-	kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-
-.PHONY: apply-fdb-operator
-apply-fdb-operator:
-	@echo "Applying FoundationDB Operator manifests..."
-	kubectl apply -f ./resources/fdb-operator
+.PHONY: apply-gke-nvme
+apply-gke-nvme:
+	@echo "Applying NVMe SSD..."
+	kubectl apply -f ./resources/gke-nvme
 
 .PHONY: apply-fdb
 apply-fdb:
@@ -53,7 +71,7 @@ apply-monitoring:
 	helm upgrade --install monitoring prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace --values ./resources/monitoring/values.yaml
 
 .PHONY: apply-k8s
-apply-k8s:  apply-openebs apply-fdb-operator apply-monitoring apply-fdb-exporter apply-fdb
+apply-k8s: apply-monitoring apply-fdb apply-fdb-exporter
 	@echo "Applying K8S..."
 
 .PHONY: proxy-grafana
@@ -69,7 +87,12 @@ apply-f8n:
 	@echo "Applying F8N..."
 	kubectl apply -f ./resources/f8n
 
+.PHONY: apply-etcd-benchmark
+apply-etcd-benchmark:
+	@echo "Applying Etcd benchmark..."
+	kubectl apply -f ./etcd-benchmark/manifests
+
 .PHONY: apply-lease-flood
 apply-lease-flood:
 	@echo "Applying lease flood..."
-	kubectl apply -f ./etcd-lease-flood/manifests/etcd-lease-flood.yaml
+	kubectl apply -f ./etcd-lease-flood/manifests

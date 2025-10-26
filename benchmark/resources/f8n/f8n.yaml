@@ -30,7 +30,16 @@ spec:
           image: fra.vultrcr.com/f8ntest/f8n:0.7.0
           resources:
             requests:
-              cpu: 0.2
+              cpu: 4
+            limits:
+              memory: 2Gi
+          env:
+            # https://goperf.dev/01-common-patterns/gc/#gc-tuning-gogc
+            - name: GOGC
+              value: "500"
+            # https://github.com/bchess/k8s-1m/tree/main?tab=readme-ov-file#garbage-collection
+            - name: GOMEMLIMIT
+              value: "1700MiB"
           command: ["/bin/f8n"]
           volumeMounts:
             - name: fdb-cluster-volume

@@ -1,0 +1,161 @@
+---
+# Source: local-static-provisioner/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: local-static-provisioner
+  namespace: default
+  labels:
+    helm.sh/chart: local-static-provisioner-2.8.0
+    app.kubernetes.io/name: local-static-provisioner
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/instance: local-static-provisioner
+---
+# Source: local-static-provisioner/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: local-static-provisioner-config
+  namespace: default
+  labels:
+    helm.sh/chart: local-static-provisioner-2.8.0
+    app.kubernetes.io/name: local-static-provisioner
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/instance: local-static-provisioner
+data:
+  useNodeNameOnly: "true"
+  storageClassMap: |
+    nvme-ssd-block:
+      hostDir: /mnt/disks/raid
+      mountDir: /mnt/disks/raid
+---
+# Source: local-static-provisioner/templates/storageclass.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nvme-ssd-block
+  labels:
+    helm.sh/chart: local-static-provisioner-2.8.0
+    app.kubernetes.io/name: local-static-provisioner
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/instance: local-static-provisioner
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+---
+# Source: local-static-provisioner/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: local-static-provisioner-node-clusterrole
+  labels:
+    helm.sh/chart: local-static-provisioner-2.8.0
+    app.kubernetes.io/name: local-static-provisioner
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/instance: local-static-provisioner
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["watch"]
+  - apiGroups: ["", "events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "update"]
+---
+# Source: local-static-provisioner/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: local-static-provisioner-node-binding
+  labels:
+    helm.sh/chart: local-static-provisioner-2.8.0
+    app.kubernetes.io/name: local-static-provisioner
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/instance: local-static-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: local-static-provisioner
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: local-static-provisioner-node-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+---
+# Source: local-static-provisioner/templates/daemonset_linux.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: local-static-provisioner
+  namespace: default
+  labels:
+    helm.sh/chart: local-static-provisioner-2.8.0
+    app.kubernetes.io/name: local-static-provisioner
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/instance: local-static-provisioner
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: local-static-provisioner
+      app.kubernetes.io/instance: local-static-provisioner
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: local-static-provisioner
+        app.kubernetes.io/instance: local-static-provisioner
+      annotations:
+        checksum/config: d9191c060c7fcde603bde4b55027b33deecfbfc1c3c52d160b7504f11a40fd09
+    spec:
+      hostPID: false
+      serviceAccountName: local-static-provisioner
+      nodeSelector:
+        kubernetes.io/os: linux
+      containers:
+        - name: provisioner
+          image: registry.k8s.io/sig-storage/local-volume-provisioner:v2.7.0
+          securityContext:
+            privileged: true
+          env:
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: MY_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: JOB_CONTAINER_IMAGE
+              value: registry.k8s.io/sig-storage/local-volume-provisioner:v2.7.0
+          ports:
+            - name: metrics
+              containerPort: 8080
+          volumeMounts:
+            - name: provisioner-config
+              mountPath: /etc/provisioner/config
+              readOnly: true
+            - name: provisioner-dev
+              mountPath: /dev
+            - name: nvme-ssd-block
+              mountPath: /mnt/disks/raid
+              mountPropagation: HostToContainer
+      volumes:
+        - name: provisioner-config
+          configMap:
+            name: local-static-provisioner-config
+        - name: provisioner-dev
+          hostPath:
+            path: /dev
+        - name: nvme-ssd-block
+          hostPath:
+            path: /mnt/disks/raid

@@ -1,7 +1,12 @@
+openebs-crds:
+  csi:
+    volumeSnapshots:
+      enabled: false
+
 engines:
   local:
     lvm:
-      enabled: false
+      enabled: true
     zfs:
       enabled: false
     rawfile:

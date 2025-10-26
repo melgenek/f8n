@@ -912,13 +912,13 @@ data:
           "steppedLine": false,
           "targets": [
             {
-              "expr": "avg by (job)(go_gc_duration_seconds{quantile=\"0\", job=\"$job\", instance=~\"$instance\"})",
+              "expr": "avg by (job)(go_gc_duration_seconds{quantile=\"0.0\", job=\"$job\", instance=~\"$instance\"})",
               "interval": "",
               "legendFormat": "{{job}}: min gc time (avg)",
               "refId": "A"
             },
             {
-              "expr": "avg by (job)(go_gc_duration_seconds{quantile=\"1\", job=\"$job\", instance=~\"$instance\"})",
+              "expr": "avg by (job)(go_gc_duration_seconds{quantile=\"1.0\", job=\"$job\", instance=~\"$instance\"})",
               "interval": "",
               "legendFormat": "{{job}}: max gc time (avg)",
               "refId": "B"

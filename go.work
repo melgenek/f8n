@@ -4,4 +4,5 @@ use (
 	.
 	./tests/api
 	./benchmark/fdb-exporter
+	./benchmark/etcd-lease-flood
 )

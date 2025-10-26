@@ -29,18 +29,20 @@ spec:
         name: fdb-data
       spec:
         accessModes: [ "ReadWriteOnce" ]
-        storageClassName: openebs-hostpath
+#        storageClassName: openebs-hostpath
+#        storageClassName: nvme-ssd-block
         resources:
           requests:
-            storage: 10Gi
+            storage: 150Gi
     - metadata:
         name: fdb-logs
       spec:
         accessModes: [ "ReadWriteOnce" ]
-        storageClassName: openebs-hostpath
+#        storageClassName: openebs-hostpath
+#        storageClassName: nvme-ssd-block
         resources:
           requests:
-            storage: 10Gi
+            storage: 150Gi
   replicas: 1
   selector:
     matchLabels:
@@ -59,7 +61,8 @@ spec:
           image: ghcr.io/melgenek/f8n/foundationdb:7.3.69
           resources:
             requests:
-              cpu: 1
+              cpu: 4
+              memory: 5
           env:
             - name: FDB_CLUSTER_FILE
               value: /opt/fdb-cluster/fdb.cluster

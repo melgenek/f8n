@@ -33,6 +33,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 )
 
+type KV struct {
+	key             string
+	serializedValue string
+}
+
 func main() {
 	var (
 		endpoints  = flag.String("endpoints", "localhost:2379", "comma-separated etcd endpoints")
@@ -59,11 +64,10 @@ func main() {
 
 	// Create initial keys
 	log.Printf("Creating %d initial Lease keys...", *numKeys)
-	keys := make([]string, *numKeys)
+	kvs := make([]KV, *numKeys)
 	for i := 0; i < *numKeys; i++ {
 		leaseName := fmt.Sprintf("%slease-%d", *keyPrefix, i)
 		key := fmt.Sprintf("/registry/leases/%s/%s", *namespace, leaseName)
-		keys[i] = key
 
 		lease := createLease(leaseName, *namespace)
 		data, err := runtime.Encode(serializer, &lease)
@@ -71,6 +75,7 @@ func main() {
 			log.Printf("Failed to encode lease %d: %v", i, err)
 			continue
 		}
+		kvs[i] = KV{key: key, serializedValue: string(data)}
 
 		_, err = cli.Put(context.Background(), key, string(data))
 		if err != nil {
@@ -106,7 +111,7 @@ func main() {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			worker(cli, keys, serializer, *namespace, &putCount, workerID, *numWorkers)
+			worker(cli, kvs, &putCount, workerID, *numWorkers)
 		}(i)
 	}
 
@@ -114,34 +119,22 @@ func main() {
 	wg.Wait()
 }
 
-func worker(cli *clientv3.Client, keys []string, serializer runtime.Codec, namespace string, putCount *int64, workerID int, numWorkers int) {
+func worker(cli *clientv3.Client, keys []KV, putCount *int64, workerID int, numWorkers int) {
 	start := (len(keys) / numWorkers) * workerID
 	end := start + (len(keys) / numWorkers)
 	keyIndex := start
 	for {
 		// Pick a random key to update
-		key := keys[keyIndex]
+		kv := keys[keyIndex]
 		keyIndex++
 		if keyIndex >= end {
 			keyIndex = start
 		}
 
-		// Extract lease name from key
-		parts := strings.Split(key, "/")
-		leaseName := parts[len(parts)-1]
-
-		// Create updated lease
-		lease := createLease(leaseName, namespace)
-		data, err := runtime.Encode(serializer, &lease)
-		if err != nil {
-			log.Printf("Worker %d: Failed to encode lease: %v", workerID, err)
-			continue
-		}
-
 		// Update the key
-		_, err = cli.Put(context.Background(), key, string(data))
+		_, err := cli.Put(context.Background(), kv.key, kv.serializedValue)
 		if err != nil {
-			log.Printf("Worker %d: Failed to update key %s: %v", workerID, key, err)
+			log.Printf("Worker %d: Failed to update key %s: %v", workerID, kv.key, err)
 		} else {
 			atomic.AddInt64(putCount, 1)
 		}

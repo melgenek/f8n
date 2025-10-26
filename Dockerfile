@@ -28,7 +28,7 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
     && wget "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_${FDB_ARCH}.deb" \
     && dpkg -i foundationdb-clients_${FDB_VERSION}-1_${FDB_ARCH}.deb
 
-FROM base as build
+FROM base AS build
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     CGO_CFLAGS="-DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_USE_ALLOCA=1" xx-go build -ldflags "-extldflags -s" -o bin/f8n
 
