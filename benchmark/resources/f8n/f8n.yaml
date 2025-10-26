@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: f8n
+  namespace: fdb
+  labels:
+    app: f8n
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: f8n
+  template:
+    metadata:
+      labels:
+        app: f8n
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - fdb
+            topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: f8n
+          image: fra.vultrcr.com/f8ntest/f8n:0.7.0
+          resources:
+            requests:
+              cpu: 0.2
+          command: ["/bin/f8n"]
+          volumeMounts:
+            - name: fdb-cluster-volume
+              mountPath: /etc/foundationdb/fdb.cluster
+              subPath: fdb.cluster
+      volumes:
+        - name: fdb-cluster-volume
+          configMap:
+            name: fdb-cluster-file
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: f8n
+  namespace: fdb
+  labels:
+    app: f8n
+spec:
+  selector:
+    app: f8n
+  ports:
+    - name: etcd
+      protocol: TCP
+      port: 2379
+      targetPort: 2379
+    - name: metrics
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: f8n
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: f8n
+  namespaceSelector:
+    matchNames:
+      - fdb
+  endpoints:
+    - port: metrics
+      interval: 15s

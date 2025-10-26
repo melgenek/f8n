@@ -57,6 +57,9 @@ spec:
       containers:
         - name: fdb
           image: ghcr.io/melgenek/f8n/foundationdb:7.3.69
+          resources:
+            requests:
+              cpu: 1
           env:
             - name: FDB_CLUSTER_FILE
               value: /opt/fdb-cluster/fdb.cluster

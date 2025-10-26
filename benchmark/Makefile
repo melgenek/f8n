@@ -67,7 +67,7 @@ proxy-grafana:
 .PHONY: apply-f8n
 apply-f8n:
 	@echo "Applying F8N..."
-	kubectl apply -f ./resources/f8n.yaml
+	kubectl apply -f ./resources/f8n
 
 .PHONY: apply-lease-flood
 apply-lease-flood:

@@ -20,6 +20,16 @@ spec:
       labels:
         app: etcd-lease-flood
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - fdb
+            topologyKey: "kubernetes.io/hostname"
       containers:
         - name: etcd-lease-flood
           image: fra.vultrcr.com/f8ntest/lease-flood:0.0.1
@@ -29,3 +39,6 @@ spec:
             "--workers=100",
             "--num-keys=1000"
           ]
+          resources:
+            requests:
+              cpu: 1.2
