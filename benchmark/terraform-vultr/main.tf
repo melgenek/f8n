@@ -6,10 +6,10 @@ resource "vultr_kubernetes" "test" {
   node_pools {
     label      = "operator-pool"
     plan       = "voc-c-2c-4gb-75s"
-    node_quantity = 3
+    node_quantity = 2
     auto_scaler = false
     min_nodes = 1
-    max_nodes = 3
+    max_nodes = 2
     labels = {
       node-role = "operators"
     }

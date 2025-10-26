@@ -152,6 +152,9 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # Set the LD_LIBRARY_PATH environment variable to tell FoundationDB to load its primary client library from this directory instead of the directory provided by the image.
+            - name: LD_LIBRARY_PATH
+              value: /usr/bin/fdb/primary/lib
           image: foundationdb/fdb-kubernetes-operator:v2.16.0
           name: manager
           ports:
@@ -176,25 +179,23 @@ spec:
             - mountPath: /usr/bin/fdb
               name: fdb-binaries
       initContainers:
-        - args:
-            - --copy-library
-            - "7.1"
-            - --copy-binary
-            - fdbcli
-            - --copy-binary
-            - fdbbackup
-            - --copy-binary
-            - fdbrestore
-            - --output-dir
-            - /var/output-files
+        # Install this library in a special location to force the operator to
+        # use it as the primary library.
+        - name: foundationdb-kubernetes-init-7-3-primary
+          image: foundationdb/fdb-kubernetes-monitor:7.3.63
+          args:
+            - "--copy-library"
+            - "7.3"
+            - "--output-dir"
+            - "/var/output-files/primary" # Note that we use `primary` as the subdirectory
             - --mode
             - init
-          image: foundationdb/fdb-kubernetes-monitor:7.1.67
-          name: foundationdb-kubernetes-init-7-1
           volumeMounts:
-            - mountPath: /var/output-files
-              name: fdb-binaries
-        - args:
+            - name: fdb-binaries
+              mountPath: /var/output-files
+        - name: foundationdb-kubernetes-init-7-3
+          image: foundationdb/fdb-kubernetes-monitor:7.3.63
+          args:
             - --copy-library
             - "7.3"
             - --copy-binary
@@ -207,26 +208,6 @@ spec:
             - /var/output-files
             - --mode
             - init
-          image: foundationdb/fdb-kubernetes-monitor:7.3.63
-          name: foundationdb-kubernetes-init-7-3
-          volumeMounts:
-            - mountPath: /var/output-files
-              name: fdb-binaries
-        - args:
-            - --copy-library
-            - "7.4"
-            - --copy-binary
-            - fdbcli
-            - --copy-binary
-            - fdbbackup
-            - --copy-binary
-            - fdbrestore
-            - --output-dir
-            - /var/output-files
-            - --mode
-            - init
-          image: foundationdb/fdb-kubernetes-monitor:7.4.1
-          name: foundationdb-kubernetes-init-7-4
           volumeMounts:
             - mountPath: /var/output-files
               name: fdb-binaries

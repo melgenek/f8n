@@ -25,5 +25,7 @@ spec:
           image: fra.vultrcr.com/f8ntest/lease-flood:0.0.1
           command: ["/etcd-lease-flood"]
           args: [
-            "--endpoints=f8n-service.fdb-operator:2379"
+            "--endpoints=f8n-service.fdb-operator:2379",
+            "--workers=100",
+            "--num-keys=1000"
           ]

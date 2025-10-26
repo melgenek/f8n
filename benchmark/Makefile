@@ -72,4 +72,4 @@ apply-f8n:
 .PHONY: apply-lease-flood
 apply-lease-flood:
 	@echo "Applying lease flood..."
-	kubectl apply -f ./resources/etcd-lease-flood.yaml
+	kubectl apply -f ./etcd-lease-flood/manifests/etcd-lease-flood.yaml
