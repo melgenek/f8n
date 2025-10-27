@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  etcd:
+    image: gcr.io/etcd-development/etcd:v3.5.13
+    command:
+      - /usr/local/bin/etcd
+      - --name
+      - s1
+      - --listen-client-urls
+      - http://0.0.0.0:2379
+      - --advertise-client-urls
+      - http://0.0.0.0:2379
+      - --quota-backend-bytes
+      - "2147483648" # 2GiB
+    ports:
+      - "2379:2379"
+
+  etcd-benchmark:
+    image: fra.vultrcr.com/f8ntest/etcd-benchmark:0.0.1
+    command:
+      - --endpoints=etcd:2379
+      - put
+      - --key-space-size=1100
+      - --key-size=48
+      - --val-size=1048576
+      - --total=1000 # 1k keys * 1MiB value should be enough to exhaust 2G
+    depends_on:
+      - etcd
