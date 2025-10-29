@@ -24,25 +24,6 @@ metadata:
   name: fdb
   namespace: fdb
 spec:
-  volumeClaimTemplates:
-    - metadata:
-        name: fdb-data
-      spec:
-        accessModes: [ "ReadWriteOnce" ]
-#        storageClassName: openebs-hostpath
-#        storageClassName: nvme-ssd-block
-        resources:
-          requests:
-            storage: 150Gi
-    - metadata:
-        name: fdb-logs
-      spec:
-        accessModes: [ "ReadWriteOnce" ]
-#        storageClassName: openebs-hostpath
-#        storageClassName: nvme-ssd-block
-        resources:
-          requests:
-            storage: 150Gi
   replicas: 1
   selector:
     matchLabels:
@@ -53,8 +34,14 @@ spec:
       labels:
         app: fdb
     spec:
+      nodeSelector:
+        cloud.google.com/gke-ephemeral-storage-local-ssd: "true"
       volumes:
         - name: fdb-cluster-volume
+          emptyDir: {}
+        - name: fdb-data
+          emptyDir: {}
+        - name: fdb-logs
           emptyDir: {}
       containers:
         - name: fdb
@@ -63,6 +50,7 @@ spec:
             requests:
               cpu: 4
               memory: 5
+              ephemeral-storage: "200Gi"
           env:
             - name: FDB_CLUSTER_FILE
               value: /opt/fdb-cluster/fdb.cluster

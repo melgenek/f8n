@@ -51,13 +51,3 @@ docker exec k3s-demo kubectl get nodes -A
 NAME           STATUS   ROLES                  AGE   VERSION
 77232a04e727   Ready    control-plane,master   23s   v1.33.3+k3s1
 ```
-
-
-docker run --rm  fra.vultrcr.com/f8ntest/etcd-benchmark:0.0.1 \
- put \
---endpoints 127.0.0.1:2379 \
---conns 10 \
---clients 10 \
---total 10000 \
---key-size 8 \
---val-size 256

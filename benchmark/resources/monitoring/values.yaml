@@ -14,20 +14,10 @@ grafana:
       enabled: true
 
   tolerations: []
-  nodeSelector:
-    node-role: operators
 
 prometheus:
   prometheusSpec:
     tolerations: []
-#    nodeSelector:
-#      node-role: operators
-    volumeClaimTemplate:
-      spec:
-        storageClassName: openebs-hostpath
-        resources:
-          requests:
-            storage: 8Gi
 
 alertmanager:
   enabled: false

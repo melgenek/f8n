@@ -40,20 +40,6 @@ loginvultr:
 	@echo "Logging into Kubernetes..."
 	terraform -chdir=terraform-vultr output -raw kube_config | base64 --decode > ~/.kube/config
 
-.PHONY: apply-openebs
-apply-openebs:
-	@echo "Applying openebs..."
-	#helm repo add openebs https://openebs.github.io/openebs
-	#helm repo update
-
-
-	helm upgrade --install openebs openebs/openebs --namespace openebs --create-namespace --values ./resources/values-localebs.yaml
-
-.PHONY: apply-gke-nvme
-apply-gke-nvme:
-	@echo "Applying NVMe SSD..."
-	kubectl apply -f ./resources/gke-nvme
-
 .PHONY: apply-fdb
 apply-fdb:
 	@echo "Applying FoundationDB cluster..."
@@ -66,8 +52,8 @@ apply-fdb-exporter:
 
 .PHONY: apply-monitoring
 apply-monitoring:
-	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-	helm repo update
+	#helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+	#helm repo update
 	helm upgrade --install monitoring prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace --values ./resources/monitoring/values.yaml
 
 .PHONY: apply-k8s

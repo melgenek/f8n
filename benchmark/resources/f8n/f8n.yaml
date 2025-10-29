@@ -30,7 +30,7 @@ spec:
           image: fra.vultrcr.com/f8ntest/f8n:0.7.0
           resources:
             requests:
-              cpu: 4
+              cpu: 3
             limits:
               memory: 2Gi
           env:

@@ -20,7 +20,6 @@ spec:
       labels:
         app: etcd-benchmark
     spec:
-      restartPolicy: Never
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
