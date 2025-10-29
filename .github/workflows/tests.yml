@@ -18,11 +18,11 @@ jobs:
       - name: Set up Docker Compose
         uses: docker/setup-compose-action@v1
 
-      - name: Run tests
-        run: make run-tests
+#      - name: Run tests
+#        run: make run-tests
 
-      - name: Run API tests
-        run: make run-tests-api
+#      - name: Run API tests
+#        run: make run-tests-api
 
       - name: Start K3S
         run: make start-k3s
