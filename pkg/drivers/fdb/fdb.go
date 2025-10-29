@@ -130,7 +130,7 @@ func (f *FDB) Start(ctx context.Context) error {
 			}
 		}
 	}
-	go f.ttl(ctx)
+	//go f.ttl(ctx)
 
 	logrus.Info("Started the FoundationDB backend")
 	return nil
