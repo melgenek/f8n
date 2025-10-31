@@ -27,7 +27,7 @@ spec:
             topologyKey: "kubernetes.io/hostname"
       containers:
         - name: f8n
-          image: fra.vultrcr.com/f8ntest/f8n:0.7.0
+          image: fra.vultrcr.com/f8ntest/f8n:0.8.0
           resources:
             requests:
               cpu: 3
@@ -40,7 +40,7 @@ spec:
             # https://github.com/bchess/k8s-1m/tree/main?tab=readme-ov-file#garbage-collection
             - name: GOMEMLIMIT
               value: "1700MiB"
-          command: ["/bin/f8n"]
+          command: ["/bin/f8n", "--metrics-enable-profiling"]
           volumeMounts:
             - name: fdb-cluster-volume
               mountPath: /etc/foundationdb/fdb.cluster

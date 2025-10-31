@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	coordv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,6 +37,7 @@ import (
 type KV struct {
 	key             string
 	serializedValue string
+	lastRevision    int64
 }
 
 func main() {
@@ -77,9 +79,11 @@ func main() {
 		}
 		kvs[i] = KV{key: key, serializedValue: string(data)}
 
-		_, err = cli.Put(context.Background(), key, string(data))
+		rev, err := optimisticPut(cli, context.Background(), key, string(data), 0)
 		if err != nil {
 			log.Printf("Failed to create key %s: %v", key, err)
+		} else {
+			kvs[i].lastRevision = rev
 		}
 	}
 	log.Printf("Created %d initial keys", *numKeys)
@@ -111,7 +115,9 @@ func main() {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			worker(cli, kvs, &putCount, workerID, *numWorkers)
+			start := (len(kvs) / *numWorkers) * workerID
+			end := start + (len(kvs) / *numWorkers)
+			worker(cli, kvs[start:end], &putCount, workerID)
 		}(i)
 	}
 
@@ -119,25 +125,42 @@ func main() {
 	wg.Wait()
 }
 
-func worker(cli *clientv3.Client, keys []KV, putCount *int64, workerID int, numWorkers int) {
-	start := (len(keys) / numWorkers) * workerID
-	end := start + (len(keys) / numWorkers)
-	keyIndex := start
+func worker(cli *clientv3.Client, kvs []KV, putCount *int64, workerID int) {
+	idx := 0
 	for {
-		// Pick a random key to update
-		kv := keys[keyIndex]
-		keyIndex++
-		if keyIndex >= end {
-			keyIndex = start
-		}
+		kv := kvs[idx]
 
-		// Update the key
-		_, err := cli.Put(context.Background(), kv.key, kv.serializedValue)
+		rev, err := optimisticPut(cli, context.Background(), kv.key, kv.serializedValue, kv.lastRevision)
 		if err != nil {
 			log.Printf("Worker %d: Failed to update key %s: %v", workerID, kv.key, err)
 		} else {
+			kvs[idx].lastRevision = rev
 			atomic.AddInt64(putCount, 1)
 		}
+
+		idx++
+		if idx >= len(kvs) {
+			idx = 0
+		}
+	}
+}
+
+func optimisticPut(k *clientv3.Client, ctx context.Context, key string, value string, expectedRevision int64) (int64, error) {
+	txn := k.KV.Txn(ctx).If(
+		clientv3.Compare(clientv3.ModRevision(key), "=", expectedRevision),
+	).Then(
+		clientv3.OpPut(key, value, clientv3.WithLease(0)),
+	).Else(clientv3.OpGet(key))
+
+	txnResp, err := txn.Commit()
+	if err != nil {
+		return -1, err
+	}
+
+	if txnResp.Succeeded {
+		return txnResp.Responses[0].Response.(*etcdserverpb.ResponseOp_ResponsePut).ResponsePut.Header.Revision, nil
+	} else {
+		return txnResp.Responses[0].Response.(*etcdserverpb.ResponseOp_ResponseRange).ResponseRange.Kvs[0].ModRevision, nil
 	}
 }
 

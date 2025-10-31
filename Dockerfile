@@ -11,10 +11,7 @@ ENV TAG=${TAG} CGO_ENABLED=1
 
 ENV SRC_DIR=/go/src/github.com/melgenek/f8n
 WORKDIR ${SRC_DIR}/
-COPY ./go.mod ./go.sum ./go.work ./go.work.sum ./main.go ./
-COPY ./pkg ./pkg
-COPY ./tests/api ./tests/api
-COPY ./.golangci.json ./.golangci.json
+COPY ./ ./
 
 ARG FDB_VERSION=7.3.69
 RUN if [ "${TARGETARCH}" = "amd64" ]; then \

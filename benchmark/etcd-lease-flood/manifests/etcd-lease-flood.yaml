@@ -32,7 +32,7 @@ spec:
             topologyKey: "kubernetes.io/hostname"
       containers:
         - name: etcd-lease-flood
-          image: fra.vultrcr.com/f8ntest/lease-flood:0.0.2
+          image: fra.vultrcr.com/f8ntest/lease-flood:0.0.4
           command: ["/etcd-lease-flood"]
           args: [
             "--endpoints=f8n.fdb:2379",
