@@ -33,13 +33,13 @@ spec:
             - name: FDB_CLUSTER_FILE
               value: /etc/foundationdb/fdb.cluster
           volumeMounts:
-            - name: config-volume
+            - name: fdb-cluster-volume
               mountPath: /etc/foundationdb/fdb.cluster
-              subPath: fdb.cluster
+              subPath: cluster-file
       volumes:
-        - name: config-volume
+        - name: fdb-cluster-volume
           configMap:
-            name: fdb-cluster-file
+            name: test-cluster-config
 ---
 apiVersion: v1
 kind: Service

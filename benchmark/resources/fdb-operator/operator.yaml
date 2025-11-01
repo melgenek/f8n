@@ -1,0 +1,224 @@
+# https://raw.githubusercontent.com/foundationdb/fdb-kubernetes-operator/main/config/samples/deployment.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fdb
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: fdb
+  name: fdb-kubernetes-operator-controller-manager
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fdb-kubernetes-operator-manager-clusterrole
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fdb-kubernetes-operator-manager-role
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - events
+      - persistentvolumeclaims
+      - pods
+      - secrets
+      - services
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - apps.foundationdb.org
+    resources:
+      - foundationdbbackups
+      - foundationdbclusters
+      - foundationdbrestores
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - apps.foundationdb.org
+    resources:
+      - foundationdbbackups/status
+      - foundationdbclusters/status
+      - foundationdbrestores/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: fdb
+  name: fdb-kubernetes-operator-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fdb-kubernetes-operator-manager-role
+subjects:
+  - kind: ServiceAccount
+    name: fdb-kubernetes-operator-controller-manager
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fdb-kubernetes-operator-manager-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fdb-kubernetes-operator-manager-clusterrole
+subjects:
+  - kind: ServiceAccount
+    name: fdb-kubernetes-operator-controller-manager
+    namespace: metadata.namespace
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: fdb
+  labels:
+    app: fdb-kubernetes-operator-controller-manager
+    control-plane: controller-manager
+  name: fdb-kubernetes-operator-controller-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fdb-kubernetes-operator-controller-manager
+  template:
+    metadata:
+      labels:
+        app: fdb-kubernetes-operator-controller-manager
+        control-plane: controller-manager
+    spec:
+      containers:
+        - command:
+            - /manager
+            - --health-probe-bind-address
+            - 0.0.0.0:9443
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # Set the LD_LIBRARY_PATH environment variable to tell FoundationDB to load its primary client library from this directory instead of the directory provided by the image.
+            - name: LD_LIBRARY_PATH
+              value: /usr/bin/fdb/primary/lib
+          image: foundationdb/fdb-kubernetes-operator:v2.16.0
+          name: manager
+          ports:
+            - containerPort: 8080
+              name: metrics
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /var/log/fdb
+              name: logs
+            - mountPath: /usr/bin/fdb
+              name: fdb-binaries
+      initContainers:
+        # Install this library in a special location to force the operator to
+        # use it as the primary library.
+        - name: foundationdb-kubernetes-init-7-3-primary
+          image: foundationdb/fdb-kubernetes-monitor:7.3.63
+          args:
+            - "--copy-library"
+            - "7.3"
+            - "--output-dir"
+            - "/var/output-files/primary" # Note that we use `primary` as the subdirectory
+            - --mode
+            - init
+          volumeMounts:
+            - name: fdb-binaries
+              mountPath: /var/output-files
+        - name: foundationdb-kubernetes-init-7-3
+          image: foundationdb/fdb-kubernetes-monitor:7.3.63
+          args:
+            - --copy-library
+            - "7.3"
+            - --copy-binary
+            - fdbcli
+            - --copy-binary
+            - fdbbackup
+            - --copy-binary
+            - fdbrestore
+            - --output-dir
+            - /var/output-files
+            - --mode
+            - init
+          volumeMounts:
+            - mountPath: /var/output-files
+              name: fdb-binaries
+      securityContext:
+        fsGroup: 4059
+        runAsGroup: 4059
+        runAsUser: 4059
+      serviceAccountName: fdb-kubernetes-operator-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - emptyDir: {}
+          name: tmp
+        - emptyDir: {}
+          name: logs
+        - emptyDir: {}
+          name: fdb-binaries

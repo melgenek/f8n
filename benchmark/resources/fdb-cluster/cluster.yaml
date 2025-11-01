@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fdb-kubernetes
+  namespace: fdb
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fdb-kubernetes
+  namespace: fdb
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "pods"
+    verbs:
+      - "get"
+      - "watch"
+      - "update"
+      - "patch"
+      - "list"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fdb-kubernetes
+  namespace: fdb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fdb-kubernetes
+subjects:
+  - kind: ServiceAccount
+    name: fdb-kubernetes
+---
+apiVersion: apps.foundationdb.org/v1beta2
+kind: FoundationDBCluster
+metadata:
+  namespace: fdb
+  name: test-cluster
+spec:
+  automationOptions:
+    replacements:
+      enabled: true
+  faultDomain:
+    key: foundationdb.org/none
+  imageType: unified
+  labels:
+    matchLabels:
+      foundationdb.org/fdb-cluster-name: test-cluster
+    processClassLabels:
+      - foundationdb.org/fdb-process-class
+    processGroupIDLabels:
+      - foundationdb.org/fdb-process-group-id
+  minimumUptimeSecondsForBounce: 60
+  processCounts:
+    storage: 1
+    log: 1
+    stateless: 1
+  processes:
+    general:
+      podTemplate:
+        spec:
+          nodeSelector:
+            cloud.google.com/gke-ephemeral-storage-local-ssd: "true"
+          serviceAccount: fdb-kubernetes
+          containers:
+            - name: foundationdb
+              resources:
+                requests:
+                  cpu: 1
+                  memory: 8Gi
+            - name: foundationdb-kubernetes-sidecar
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+      volumeClaimTemplate:
+        spec:
+          storageClassName: openebs-hostpath
+          resources:
+            requests:
+              storage: 100Gi
+    stateless:
+      podTemplate:
+        spec:
+          nodeSelector:
+            cloud.google.com/gke-ephemeral-storage-local-ssd: "true"
+          serviceAccount: fdb-kubernetes
+          containers:
+            - name: foundationdb
+              resources:
+                requests:
+                  cpu: 1
+                  memory: 4Gi
+            - name: foundationdb-kubernetes-sidecar
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+  routing:
+    useDNSInClusterFile: true
+  sidecarContainer:
+    enableLivenessProbe: true
+    enableReadinessProbe: false
+  version: 7.3.63
+  databaseConfiguration:
+    redundancy_mode: single
+    storage_engine: ssd-redwood-1

@@ -40,15 +40,27 @@ loginvultr:
 	@echo "Logging into Kubernetes..."
 	terraform -chdir=terraform-vultr output -raw kube_config | base64 --decode > ~/.kube/config
 
+.PHONY: apply-fdb-operator
+apply-fdb-operator:
+	@echo "Applying FoundationDB Operator manifests..."
+	kubectl apply -f ./resources/fdb-operator
+
 .PHONY: apply-fdb
 apply-fdb:
 	@echo "Applying FoundationDB cluster..."
-	kubectl apply -f ./resources/fdb.yaml
+	kubectl apply -f ./resources/fdb-cluster
 
 .PHONY: apply-fdb-exporter
 apply-fdb-exporter:
 	@echo "Applying FoundationDB exporter..."
 	kubectl apply -f ./fdb-exporter/manifests
+
+.PHONY: apply-openebs
+apply-openebs:
+	@echo "Applying openebs..."
+	helm repo add openebs https://openebs.github.io/openebs
+	helm repo update
+	helm upgrade --install openebs openebs/openebs --namespace openebs --create-namespace --values ./resources/values-localebs.yaml
 
 .PHONY: apply-monitoring
 apply-monitoring:
@@ -56,8 +68,12 @@ apply-monitoring:
 	#helm repo update
 	helm upgrade --install monitoring prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace --values ./resources/monitoring/values.yaml
 
+.PHONY: apply-fdb-all
+apply-fdb-all: apply-fdb-operator apply-fdb apply-fdb-exporter
+	@echo "Applying FDB..."
+
 .PHONY: apply-k8s
-apply-k8s: apply-monitoring apply-fdb apply-fdb-exporter
+apply-k8s: apply-monitoring apply-openebs apply-fdb-all
 	@echo "Applying K8S..."
 
 .PHONY: proxy-grafana

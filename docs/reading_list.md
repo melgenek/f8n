@@ -49,3 +49,6 @@
 - https://pierrezemb.fr/posts/notes-about-foundationdb/
 - https://forums.foundationdb.org/t/transaction-operation-throughput/1880/7
 - https://forums.foundationdb.org/t/foundationdb-ram-requirements/1646/2
+- https://forums.foundationdb.org/t/process-class-and-machine-sharing-deployment-questions/1600
+- https://forums.foundationdb.org/t/foundationdb-tuning-advice/4982
+- 

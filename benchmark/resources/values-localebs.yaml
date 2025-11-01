@@ -1,0 +1,30 @@
+openebs-crds:
+  csi:
+    volumeSnapshots:
+      enabled: false
+
+localpv-provisioner:
+  localpv:
+    # https://cloud.google.com/blog/products/containers-kubernetes/high-performance-aiml-storage-through-local-ssd-support-on-gke
+    basePath: "/mnt/stateful_partition/kube-ephemeral-ssd"
+
+engines:
+  local:
+    lvm:
+      enabled: false
+    zfs:
+      enabled: false
+    rawfile:
+      enabled: false
+  replicated:
+    mayastor:
+      enabled: false
+
+loki:
+  enabled: false
+
+alloy:
+  enabled: false
+
+minio:
+  enabled: false

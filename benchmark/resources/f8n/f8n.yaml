@@ -20,10 +20,10 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchExpressions:
-              - key: app
+              - key: foundationdb.org/fdb-cluster-name
                 operator: In
                 values:
-                - fdb
+                - test-cluster
             topologyKey: "kubernetes.io/hostname"
       containers:
         - name: f8n
@@ -40,15 +40,15 @@ spec:
             # https://github.com/bchess/k8s-1m/tree/main?tab=readme-ov-file#garbage-collection
             - name: GOMEMLIMIT
               value: "1700MiB"
-          command: ["/bin/f8n", "--metrics-enable-profiling"]
+          command: ["/bin/f8n", "--metrics-enable-profiling", "--fdb-clean-directory-on-start"]
           volumeMounts:
             - name: fdb-cluster-volume
               mountPath: /etc/foundationdb/fdb.cluster
-              subPath: fdb.cluster
+              subPath: cluster-file
       volumes:
         - name: fdb-cluster-volume
           configMap:
-            name: fdb-cluster-file
+            name: test-cluster-config
 ---
 apiVersion: v1
 kind: Service
