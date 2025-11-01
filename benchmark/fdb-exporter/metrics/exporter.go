@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"encoding/json"
-	"fmt"
 	"sync"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
@@ -1171,8 +1170,6 @@ func (e *Exporter) getStatus() (*FDBStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println(string(statusJSON.([]byte)))
 
 	var status FDBStatus
 	if err := json.Unmarshal(statusJSON.([]byte), &status); err != nil {

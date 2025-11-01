@@ -24,7 +24,13 @@ resource "google_container_cluster" "test" {
     # }
   }
 
-  deletion_protection = false
+ dns_config {
+ cluster_dns                   = "CLOUD_DNS"
+ cluster_dns_scope             = "CLUSTER_SCOPE"
+
+}
+
+deletion_protection = false
 
   depends_on = [
     google_project_service.container,
@@ -62,6 +68,49 @@ resource "google_container_node_pool" "node_pool2" {
   node_config {
     spot            = true
     machine_type    = "c4d-standard-8-lssd"
+    disk_size_gb    = 20
+    disk_type       = "hyperdisk-balanced"
+    ephemeral_storage_local_ssd_config {
+      local_ssd_count = 1
+    }
+  }
+
+  depends_on = [
+    google_container_cluster.test,
+  ]
+}
+
+
+resource "google_container_node_pool" "node_pool3" {
+  name       = "node-pool3"
+  location   = google_container_cluster.test.location
+  cluster    = google_container_cluster.test.name
+  node_count = 1
+
+  node_config {
+    spot            = true
+    machine_type    = "c4-standard-4"
+    disk_size_gb    = 20
+    disk_type       = "hyperdisk-balanced"
+    # ephemeral_storage_local_ssd_config {
+    #   local_ssd_count = 1
+    # }
+  }
+
+  depends_on = [
+    google_container_cluster.test,
+  ]
+}
+
+resource "google_container_node_pool" "node_pool4" {
+  name       = "node-pool4"
+  location   = google_container_cluster.test.location
+  cluster    = google_container_cluster.test.name
+  node_count = 1
+
+  node_config {
+    spot            = true
+    machine_type    = "c3-standard-8-lssd"
     disk_size_gb    = 20
     disk_type       = "hyperdisk-balanced"
     ephemeral_storage_local_ssd_config {

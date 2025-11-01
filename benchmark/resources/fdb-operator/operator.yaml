@@ -140,6 +140,16 @@ spec:
         app: fdb-kubernetes-operator-controller-manager
         control-plane: controller-manager
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: foundationdb.org/fdb-cluster-name
+                    operator: In
+                    values:
+                      - test-cluster
+              topologyKey: "kubernetes.io/hostname"
       containers:
         - command:
             - /manager
@@ -160,10 +170,8 @@ spec:
               name: metrics
           resources:
             limits:
-              cpu: 500m
               memory: 256Mi
             requests:
-              cpu: 500m
               memory: 256Mi
           securityContext:
             allowPrivilegeEscalation: false

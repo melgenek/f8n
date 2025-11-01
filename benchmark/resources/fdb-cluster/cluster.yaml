@@ -55,9 +55,9 @@ spec:
       - foundationdb.org/fdb-process-group-id
   minimumUptimeSecondsForBounce: 60
   processCounts:
-    storage: 1
-    log: 1
-    stateless: 1
+    storage: 3
+    log: 2
+    stateless: 2
   processes:
     general:
       podTemplate:
@@ -70,7 +70,7 @@ spec:
               resources:
                 requests:
                   cpu: 1
-                  memory: 8Gi
+                  memory: 5Gi
             - name: foundationdb-kubernetes-sidecar
               resources:
                 requests:
@@ -82,7 +82,7 @@ spec:
           resources:
             requests:
               storage: 100Gi
-    stateless:
+    log:
       podTemplate:
         spec:
           nodeSelector:
@@ -94,6 +94,23 @@ spec:
                 requests:
                   cpu: 1
                   memory: 4Gi
+            - name: foundationdb-kubernetes-sidecar
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+    stateless:
+      podTemplate:
+        spec:
+          nodeSelector:
+            cloud.google.com/gke-ephemeral-storage-local-ssd: "true"
+          serviceAccount: fdb-kubernetes
+          containers:
+            - name: foundationdb
+              resources:
+                requests:
+                  cpu: 1
+                  memory: 1.4Gi
             - name: foundationdb-kubernetes-sidecar
               resources:
                 requests:

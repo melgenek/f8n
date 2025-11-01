@@ -16,7 +16,7 @@ spec:
         app: f8n
     spec:
       affinity:
-        podAffinity:
+        podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchExpressions:
@@ -30,7 +30,7 @@ spec:
           image: fra.vultrcr.com/f8ntest/f8n:0.8.0
           resources:
             requests:
-              cpu: 3
+              cpu: 2.4
             limits:
               memory: 2Gi
           env:
@@ -40,7 +40,7 @@ spec:
             # https://github.com/bchess/k8s-1m/tree/main?tab=readme-ov-file#garbage-collection
             - name: GOMEMLIMIT
               value: "1700MiB"
-          command: ["/bin/f8n", "--metrics-enable-profiling", "--fdb-clean-directory-on-start"]
+          command: ["/bin/f8n", "--fdb-clean-directory-on-start", "--fdb-log-conflicting-keys"]
           volumeMounts:
             - name: fdb-cluster-volume
               mountPath: /etc/foundationdb/fdb.cluster
