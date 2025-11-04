@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kine
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kine
+  namespace: kine
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: kine
+  ports:
+    - name: kine-client
+      port: 2379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  namespace: kine
+  name: kine
+spec:
+  serviceName: kine
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kine
+  template:
+    metadata:
+      labels:
+        app: kine
+    spec:
+      volumes:
+        - name: kine-data
+          emptyDir: {}
+      containers:
+        - name: kine
+          image: rancher/kine:v0.14.6
+          command: ["/bin/kine"]
+          args:
+            - "--endpoint=0.0.0.0:2379"
+            - "--endpoint=sqlite:///data/kine.db?_journal=WAL&cache=shared&_busy_timeout=30000&_txlock=immediate"
+          ports:
+            - name: kine-client
+              containerPort: 2379
+          volumeMounts:
+            - name: kine-data
+              mountPath: /data

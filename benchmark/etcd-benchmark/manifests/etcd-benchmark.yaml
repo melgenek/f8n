@@ -28,20 +28,20 @@ spec:
               - key: app
                 operator: In
                 values:
-                - fdb
+                - etcd
             topologyKey: "kubernetes.io/hostname"
       containers:
         - name: etcd-benchmark
           image: fra.vultrcr.com/f8ntest/etcd-benchmark:0.0.1
           command: ["/benchmark"]
           args: [
-            "--endpoints=f8n.fdb:2379",
+            "--endpoints=etcd.etcd:2379",
             "put",
             "--key-size=48",
             "--val-size=1024",
             "--total=10000000",
             "--conns=10",
-            "--clients=100" # 1000
+            "--clients=1000"
           ]
           resources:
             requests:

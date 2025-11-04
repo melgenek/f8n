@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: etcd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd
+  namespace: etcd
+  labels:
+    app: etcd
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: etcd
+  publishNotReadyAddresses: true
+  ports:
+    - name: etcd-client
+      port: 2379
+    - name: etcd-server
+      port: 2380
+    - name: etcd-metrics
+      port: 8080
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  namespace: etcd
+  name: etcd
+spec:
+  serviceName: etcd
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etcd
+  template:
+    metadata:
+      labels:
+        app: etcd
+      annotations:
+        serviceName: etcd
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-ephemeral-storage-local-ssd: "true"
+      volumes:
+        - name: etcd-data
+          emptyDir: {}
+      containers:
+        - name: etcd
+          image: quay.io/coreos/etcd:v3.5.16
+          resources:
+            requests:
+              cpu: 5
+              memory: 5
+              ephemeral-storage: "200Gi"
+          ports:
+            - name: etcd-client
+              containerPort: 2379
+            - name: etcd-server
+              containerPort: 2380
+            - name: etcd-metrics
+              containerPort: 8080
+          env:
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['serviceName']
+            ## Configuring etcdctl inside the container to connect to the etcd node
+            ## in the container reduces confusion when debugging.
+            - name: ETCDCTL_ENDPOINTS
+              value: $(HOSTNAME).$(SERVICE_NAME):2379
+            - name: URI_SCHEME
+              value: "http"
+          command:
+            - /usr/local/bin/etcd
+          args:
+            ##
+            ## Configure the name of the etcd server.
+            - --name=$(HOSTNAME)
+            ##
+            ## Configure etcd to use the persistent storage configured below.
+            - --data-dir=/data
+            ## 64GiB
+            - --quota-backend-bytes=68719476736
+            ##
+            ## In this example we're consolidating the WAL into sharing space with
+            ## the data directory. This is not ideal in production environments and
+            ## should be placed in it's own volume.
+            - --wal-dir=/data/wal
+            ##
+            ## URL configurations are parameterized here and you shouldn't need to
+            ## do anything with these.
+            - --listen-peer-urls=$(URI_SCHEME)://0.0.0.0:2380
+            - --listen-client-urls=$(URI_SCHEME)://0.0.0.0:2379
+            - --advertise-client-urls=$(URI_SCHEME)://$(HOSTNAME).$(SERVICE_NAME):2379
+            ##
+            ## This must be set to "new" for initial cluster bootstrapping. To scale
+            ## the cluster up, this should be changed to "existing" when the replica
+            ## count is increased. If set incorrectly, etcd makes an attempt to
+            ## start but fail safely.
+            - --initial-cluster-state=new
+            ##
+            ## Token used for cluster initialization. The recommendation for this is
+            ## to use a unique token for every cluster. This example parameterized
+            ## to be unique to the namespace, but if you are deploying multiple etcd
+            ## clusters in the same namespace, you should do something extra to
+            ## ensure uniqueness amongst clusters.
+            - --initial-cluster-token=etcd-$(K8S_NAMESPACE)
+            ##
+            ## The initial cluster flag needs to be updated to match the number of
+            ## replicas configured. When combined, these are a little hard to read.
+            ## Here is what a single parameterized peer looks like:
+            ##   etcd-0=$(URI_SCHEME)://etcd-0.$(SERVICE_NAME):2380
+            - --initial-cluster=etcd-0=$(URI_SCHEME)://etcd-0.$(SERVICE_NAME):2380
+            ##
+            ## The peer urls flag should be fine as-is.
+            - --initial-advertise-peer-urls=$(URI_SCHEME)://$(HOSTNAME).$(SERVICE_NAME):2380
+            ##
+            ## This avoids probe failure if you opt to configure TLS.
+            - --listen-metrics-urls=http://0.0.0.0:8080
+          volumeMounts:
+            - name: etcd-data
+              mountPath: /data
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: etcd
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: etcd
+  namespaceSelector:
+    matchNames:
+      - etcd
+  endpoints:
+    - port: etcd-metrics
+      interval: 15s

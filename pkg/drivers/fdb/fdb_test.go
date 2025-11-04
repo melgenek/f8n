@@ -5,16 +5,17 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"github.com/k3s-io/kine/pkg/tls"
-	"github.com/stretchr/testify/assert"
-	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	"golang.org/x/sync/errgroup"
-	"k8s.io/utils/env"
 	"os"
 	"slices"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/k3s-io/kine/pkg/tls"
+	"github.com/stretchr/testify/assert"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
+	"golang.org/x/sync/errgroup"
+	"k8s.io/utils/env"
 
 	"github.com/elliotchance/orderedmap/v3"
 	"github.com/k3s-io/kine/pkg/server"
@@ -88,6 +89,8 @@ func TestFDB(t *testing.T) {
 	history = append(history, &server.Event{Delete: false, Create: true, KV: event})
 	currentRev := nextRev
 
+	// 34418455017
+	// 11379998720
 	_, result, err = f.List(ctx, "/abc/l/", "/abc/l/", 0, currentRev, false)
 	require.NoError(t, err)
 	require.Equal(t, valuesAsSlice(events), result)
@@ -544,6 +547,21 @@ func TestFailUnavailableServer(t *testing.T) {
 
 	err := f.Start(ctx)
 	require.Error(t, err)
+}
+
+func TestVersionstamp(t *testing.T) {
+	f := NewFDB(connectionString, tls.Config{}, "dir1", &sync.WaitGroup{})
+	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
+	defer cancelCtx()
+
+	err := f.Start(ctx)
+	require.NoError(t, err)
+
+	id := VersionstampToInt64(dummyVersionstamp)
+
+	versionstamp := int64ToVersionstamp(id)
+
+	require.True(t, bytes.Equal(dummyVersionstamp.Bytes(), versionstamp.Bytes()))
 }
 
 func createRecords(t *testing.T, f server.Backend, ctx context.Context, recordCount int, recordSize int) map[string][]byte {

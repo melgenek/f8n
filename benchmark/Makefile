@@ -67,6 +67,7 @@ apply-monitoring:
 	#helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	#helm repo update
 	helm upgrade --install monitoring prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace --values ./resources/monitoring/values.yaml
+	kubectl apply -f ./resources/monitoring/go-dashboard.yaml
 
 .PHONY: apply-fdb-all
 apply-fdb-all: apply-fdb-operator apply-fdb apply-fdb-exporter
@@ -88,6 +89,11 @@ proxy-grafana:
 apply-f8n:
 	@echo "Applying F8N..."
 	kubectl apply -f ./resources/f8n
+
+.PHONY: apply-etcd
+apply-etcd:
+	@echo "Applying Etcd..."
+	kubectl apply -f ./resources/etcd.yaml
 
 .PHONY: apply-etcd-benchmark
 apply-etcd-benchmark:

@@ -52,4 +52,6 @@
 - https://forums.foundationdb.org/t/process-class-and-machine-sharing-deployment-questions/1600
 - https://forums.foundationdb.org/t/foundationdb-tuning-advice/4982
 - https://forums.foundationdb.org/t/how-to-increase-storage-server-mvcc-memory/1505 "Storage server MVCC memory."
+- https://forums.foundationdb.org/t/searching-for-more-information/371/2
+- https://forums.foundationdb.org/t/reasons-for-not-co-locating-tlog-and-ss-io-characteristics-of-ss/2013/2
 - 
