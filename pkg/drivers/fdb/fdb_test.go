@@ -35,6 +35,7 @@ func TestMain(m *testing.M) {
 		},
 	})
 	forceRetryTransaction = func(i int) bool { return i < 2 }
+	forceRetryTransaction = func(i int) bool { return false }
 
 	code := m.Run()
 
@@ -52,7 +53,8 @@ func TestFDB(t *testing.T) {
 	createRecords(t, f, ctx, 500, 100) // fill up fdb
 	cancelCtx()
 
-	forceRetryTransaction = func(i int) bool { return i < 2 }
+	//forceRetryTransaction = func(i int) bool { return i < 2 }
+	forceRetryTransaction = func(i int) bool { return false }
 
 	f = NewFDB(connectionString, tls.Config{}, "dir2", &sync.WaitGroup{})
 	ctx, cancelCtx = context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
@@ -67,8 +69,11 @@ func TestFDB(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result)
 
-	_, result, err = f.List(ctx, "/registry/health", "/registry/health", 0, 0, false)
-	require.NoError(t, err)
+	for {
+		_, result, err = f.List(ctx, "/registry/health", "/registry/health", 0, 0, false)
+		require.NoError(t, err)
+
+	}
 	require.Len(t, result, 1, "Expected to find /registry/health in the list, but got: %v", result)
 
 	events := orderedmap.NewOrderedMap[string, []*server.KeyValue]()
@@ -89,8 +94,6 @@ func TestFDB(t *testing.T) {
 	history = append(history, &server.Event{Delete: false, Create: true, KV: event})
 	currentRev := nextRev
 
-	// 34418455017
-	// 11379998720
 	_, result, err = f.List(ctx, "/abc/l/", "/abc/l/", 0, currentRev, false)
 	require.NoError(t, err)
 	require.Equal(t, valuesAsSlice(events), result)

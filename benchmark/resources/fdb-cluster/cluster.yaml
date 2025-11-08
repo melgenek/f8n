@@ -40,6 +40,7 @@ metadata:
   namespace: fdb
   name: test-cluster
 spec:
+
   automationOptions:
     replacements:
       enabled: true
@@ -54,10 +55,11 @@ spec:
     processGroupIDLabels:
       - foundationdb.org/fdb-process-group-id
   minimumUptimeSecondsForBounce: 60
+  storageServersPerPod: 2
   processCounts:
-    storage: 3
-    log: 2
-    stateless: 2
+    storage: 2
+    log: 1
+    stateless: 1
   processes:
     general:
       podTemplate:
@@ -70,11 +72,34 @@ spec:
               resources:
                 requests:
                   cpu: 1
-                  memory: 5Gi
+                  memory: 8Gi
             - name: foundationdb-kubernetes-sidecar
               resources:
                 requests:
-                  cpu: 100m
+                  cpu: 50m
+                  memory: 128Mi
+      volumeClaimTemplate:
+        spec:
+          storageClassName: openebs-hostpath
+          resources:
+            requests:
+              storage: 100Gi
+    storage:
+      podTemplate:
+        spec:
+          nodeSelector:
+            cloud.google.com/gke-ephemeral-storage-local-ssd: "true"
+          serviceAccount: fdb-kubernetes
+          containers:
+            - name: foundationdb
+              resources:
+                requests:
+                  cpu: 1250m
+                  memory: 8Gi
+            - name: foundationdb-kubernetes-sidecar
+              resources:
+                requests:
+                  cpu: 50m
                   memory: 128Mi
       volumeClaimTemplate:
         spec:
@@ -97,7 +122,7 @@ spec:
             - name: foundationdb-kubernetes-sidecar
               resources:
                 requests:
-                  cpu: 100m
+                  cpu: 50m
                   memory: 128Mi
     stateless:
       podTemplate:
@@ -110,11 +135,11 @@ spec:
               resources:
                 requests:
                   cpu: 1
-                  memory: 1.4Gi
+                  memory: 2Gi
             - name: foundationdb-kubernetes-sidecar
               resources:
                 requests:
-                  cpu: 100m
+                  cpu: 50m
                   memory: 128Mi
   routing:
     useDNSInClusterFile: true
@@ -125,3 +150,11 @@ spec:
   databaseConfiguration:
     redundancy_mode: single
     storage_engine: ssd-redwood-1
+    storage: 2
+    proxies: 1
+    logs: 1
+    commit_proxies: 1
+    grv_proxies: 1
+    resolvers: 1
+    log_routers: 1
+    remote_logs: 1

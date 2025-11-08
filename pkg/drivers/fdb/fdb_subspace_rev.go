@@ -1,6 +1,8 @@
 package fdb
 
 import (
+	"sync/atomic"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
@@ -19,23 +21,26 @@ func CreateRevisionSubspace(directory directory.DirectorySubspace) *RevisionSubs
 	}
 }
 
+var id atomic.Int64
+
 func (s *RevisionSubspace) IncrementAndGet(tr *fdb.Transaction) (tuple.Versionstamp, fdb.FutureKey, error) {
 	if UseSequentialId {
-		value, err := tr.Get(s.subspace).Get()
-		if err != nil {
-			return int64ToVersionstamp(-1), nil, err
-		}
-		id := int64(1)
-		if value != nil {
-			if t, err := tuple.Unpack(value); err != nil {
-				return int64ToVersionstamp(-1), nil, err
-			} else {
-				id = t[0].(int64)
-			}
-		}
-		id++
-		tr.Set(s.subspace, tuple.Tuple{id}.Pack())
-		versionstamp := int64ToVersionstamp(id)
+		//value, err := tr.Get(s.subspace).Get()
+		//if err != nil {
+		//	return int64ToVersionstamp(-1), nil, err
+		//}
+		//id := int64(1)
+		//if value != nil {
+		//	if t, err := tuple.Unpack(value); err != nil {
+		//		return int64ToVersionstamp(-1), nil, err
+		//	} else {
+		//		id = t[0].(int64)
+		//	}
+		//}
+		//id++
+		i := id.Add(1)
+		tr.Set(s.subspace, tuple.Tuple{i}.Pack())
+		versionstamp := int64ToVersionstamp(i)
 		return versionstamp, ConstKeyFuture{versionstamp}, nil
 	} else {
 		return tuple.IncompleteVersionstamp(0), tr.GetVersionstamp(), nil
@@ -44,7 +49,8 @@ func (s *RevisionSubspace) IncrementAndGet(tr *fdb.Transaction) (tuple.Versionst
 
 func (s *RevisionSubspace) GetLatestRev(tr *fdb.Transaction) (fdb.FutureInt64, error) {
 	if UseSequentialId {
-		return s.lastSequentialId(tr)
+		//return s.lastSequentialId(tr)
+		return ConstInt64Future{id.Load()}, nil
 	} else {
 		return tr.GetReadVersion(), nil
 	}

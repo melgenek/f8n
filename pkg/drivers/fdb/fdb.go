@@ -3,6 +3,11 @@ package fdb
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"github.com/k3s-io/kine/pkg/broadcaster"
@@ -10,14 +15,12 @@ import (
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/k3s-io/kine/pkg/tls"
 	"github.com/sirupsen/logrus"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 var (
-	_       server.Backend = &FDB{}
-	ThisFDB *FDB
+	_            server.Backend = &FDB{}
+	ThisFDB      *FDB
+	firstVersion int64
 )
 
 func init() {
@@ -122,6 +125,19 @@ func (f *FDB) Start(ctx context.Context) error {
 	f.compactRev = CreateCompactRevisionSubspace(f.dir)
 	f.rev = CreateRevisionSubspace(f.dir)
 
+	tr, err := transact("start", db, 0, func(tr fdb.Transaction) (interface{}, error) {
+		tr.Set(f.dir.Sub("dummy"), []byte("dummy"))
+		return tr, nil
+	})
+	if err != nil {
+		return err
+	}
+	firstVersion, err = tr.(fdb.Transaction).GetCommittedVersion()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("First version: %d\n", firstVersion)
+
 	// https://github.com/kubernetes/kubernetes/blob/442a69c3bdf6fe8e525b05887e57d89db1e2f3a5/staging/src/k8s.io/apiserver/pkg/storage/storagebackend/factory/etcd3.go#L97
 	if !APITest {
 		if _, err := f.Create(ctx, "/registry/health", []byte(`{"health":"true"}`), 0); err != nil {
@@ -130,7 +146,7 @@ func (f *FDB) Start(ctx context.Context) error {
 			}
 		}
 	}
-	go f.ttl(ctx)
+	//go f.ttl(ctx)
 
 	logrus.Info("Started the FoundationDB backend")
 	return nil

@@ -140,16 +140,16 @@ spec:
         app: fdb-kubernetes-operator-controller-manager
         control-plane: controller-manager
     spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: foundationdb.org/fdb-cluster-name
-                    operator: In
-                    values:
-                      - test-cluster
-              topologyKey: "kubernetes.io/hostname"
+#      affinity:
+#        podAntiAffinity:
+#          requiredDuringSchedulingIgnoredDuringExecution:
+#            - labelSelector:
+#                matchExpressions:
+#                  - key: foundationdb.org/fdb-cluster-name
+#                    operator: In
+#                    values:
+#                      - test-cluster
+#              topologyKey: "kubernetes.io/hostname"
       containers:
         - command:
             - /manager

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
+	//"go.etcd.io/etcd/api/v3/etcdserverpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	coordv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -158,10 +159,13 @@ func optimisticPut(k *clientv3.Client, ctx context.Context, key string, value st
 	}
 
 	if txnResp.Succeeded {
+		//log.Printf("Successs to update key %v", txnResp)
 		return txnResp.Responses[0].Response.(*etcdserverpb.ResponseOp_ResponsePut).ResponsePut.Header.Revision, nil
 	} else {
+		log.Printf("Failed to update key %v", txnResp)
 		return txnResp.Responses[0].Response.(*etcdserverpb.ResponseOp_ResponseRange).ResponseRange.Kvs[0].ModRevision, nil
 	}
+	//return 1, nil
 }
 
 func createLease(name, namespace string) coordv1.Lease {

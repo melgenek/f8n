@@ -16,7 +16,7 @@ spec:
         app: f8n
     spec:
       affinity:
-        podAntiAffinity:
+        podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchExpressions:
@@ -27,10 +27,10 @@ spec:
             topologyKey: "kubernetes.io/hostname"
       containers:
         - name: f8n
-          image: fra.vultrcr.com/f8ntest/f8n:0.8.0
+          image: fra.vultrcr.com/f8ntest/f8n:0.15.0
           resources:
             requests:
-              cpu: 2.4
+              cpu: 3
             limits:
               memory: 2Gi
           env:
@@ -86,4 +86,4 @@ spec:
       - fdb
   endpoints:
     - port: metrics
-      interval: 15s
+      interval: 10s

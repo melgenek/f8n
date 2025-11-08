@@ -14,10 +14,10 @@ services:
           done
           if ! fdbcli --exec status --timeout 3 ; then
             echo "creating the database"
-            if ! fdbcli --exec "configure new single ssd ; status" --timeout 10 ; then 
+            if ! fdbcli --exec "configure new single ssd-redwood-1 ; status" --timeout 10 ; then 
                 echo "Unable to configure new FDB cluster."
                 exit 1
-            elif ! fdbcli --exec "configure single ssd ; status" --timeout 10 ; then
+            elif ! fdbcli --exec "configure single ssd-redwood-1 ; status" --timeout 10 ; then
                 echo "Unable to configure existing FDB cluster."
                 exit 1
             fi

@@ -148,4 +148,4 @@ spec:
       - etcd
   endpoints:
     - port: etcd-metrics
-      interval: 15s
+      interval: 10s

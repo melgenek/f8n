@@ -3,11 +3,10 @@ package fdb
 import (
 	"crypto/rand"
 	"encoding/binary"
-	"fmt"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
-	"math"
 )
 
 func revRecordToEvent(revRecord *RevRecord) *server.Event {
@@ -39,10 +38,10 @@ func versionstampBytesToInt64(bytes []byte) int64 {
 }
 
 func VersionstampToInt64(versionstamp tuple.Versionstamp) int64 {
-	idInCommit := binary.BigEndian.Uint16(versionstamp.TransactionVersion[8:])
-	if idInCommit != 0 && idInCommit != math.MaxUint16 {
-		panic(fmt.Sprintf("there was more than one transaction in this commit. Versionstamp: %s", versionstamp.String()))
-	}
+	//idInCommit := binary.BigEndian.Uint16(versionstamp.TransactionVersion[8:])
+	//if idInCommit != 0 && idInCommit != math.MaxUint16 {
+	//	panic(fmt.Sprintf("there was more than one transaction in this commit. Versionstamp: %s", versionstamp.String()))
+	//}
 	return versionstampBytesToInt64(versionstamp.TransactionVersion[:])
 }
 
@@ -80,6 +79,19 @@ func (f ConstInt64Future) MustGet() int64      { return f.value }
 func (f ConstInt64Future) BlockUntilReady()    {}
 func (f ConstInt64Future) IsReady() bool       { return true }
 func (f ConstInt64Future) Cancel()             {}
+
+type AdjustedInt64Future struct {
+	value fdb.FutureInt64
+}
+
+func (f AdjustedInt64Future) Get() (int64, error) {
+	v, err := f.value.Get()
+	return (v - firstVersion) << 16, err
+}
+func (f AdjustedInt64Future) MustGet() int64   { return (f.value.MustGet() - firstVersion) << 16 }
+func (f AdjustedInt64Future) BlockUntilReady() { f.value.BlockUntilReady() }
+func (f AdjustedInt64Future) IsReady() bool    { return f.value.IsReady() }
+func (f AdjustedInt64Future) Cancel()          { f.value.Cancel() }
 
 type ConstKeyFuture struct {
 	versionstamp tuple.Versionstamp

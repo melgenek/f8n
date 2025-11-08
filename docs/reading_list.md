@@ -54,4 +54,8 @@
 - https://forums.foundationdb.org/t/how-to-increase-storage-server-mvcc-memory/1505 "Storage server MVCC memory."
 - https://forums.foundationdb.org/t/searching-for-more-information/371/2
 - https://forums.foundationdb.org/t/reasons-for-not-co-locating-tlog-and-ss-io-characteristics-of-ss/2013/2
+- https://forums.foundationdb.org/t/best-practices-for-bulk-load/422/5
+- https://forums.foundationdb.org/t/how-to-scale-foundation-db-reads/1108/20
+- https://forums.foundationdb.org/t/cluster-tuning-cookbook/520/22
+- https://forums.foundationdb.org/t/transaction-operation-throughput/1880/2
 - 

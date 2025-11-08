@@ -3,6 +3,7 @@ package fdb
 import (
 	"bytes"
 	"context"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
@@ -123,6 +124,8 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 	return rev, err
 }
 
+var a = newModificationResultRev(zeroFuture, nil, false)
+
 func (f *FDB) Update(_ context.Context, key string, value []byte, revision, lease int64) (int64, *server.KeyValue, bool, error) {
 	if len(value) > maxRecordSize {
 		return 0, nil, false, rpctypes.ErrRequestTooLarge
@@ -172,7 +175,9 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 			ValueSize:      int64(len(value)),
 			Value:          value,
 			CreateRevision: lastRecord.GetCreateRevision(),
-			PrevRevision:   lastRecord.Key.Rev,
+			//CreateRevision: dummyVersionstamp,
+			//PrevRevision:   dummyVersionstamp,
+			PrevRevision: lastRecord.Key.Rev,
 		}
 
 		keyFuture, uuid, err := f.append(&tr, updateRecord)

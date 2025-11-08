@@ -8,7 +8,8 @@ build:
 	docker buildx build --progress=plain \
 		--platform=$(PLATFORMS) \
 		--target=package \
-		-t fra.vultrcr.com/f8ntest/f8n:0.13.0 .
+		--network=host \
+		-t fra.vultrcr.com/f8ntest/f8n:0.15.0 .
 
 .PHONY: run-tests
 run-tests:
