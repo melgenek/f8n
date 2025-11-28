@@ -9,7 +9,7 @@ import (
 
 type KeyAndRevision struct {
 	Key string
-	Rev tuple.Versionstamp
+	Rev Revision
 }
 
 type ByKeyAndRevisionRecord struct {
@@ -17,7 +17,7 @@ type ByKeyAndRevisionRecord struct {
 	Value *Record
 }
 
-func (r *ByKeyAndRevisionRecord) GetCreateRevision() tuple.Versionstamp {
+func (r *ByKeyAndRevisionRecord) GetCreateRevision() Revision {
 	if r.Value.IsCreate {
 		return r.Key.Rev
 	} else {
@@ -70,14 +70,14 @@ func (s *ByKeyAndRevisionSubspace) parseKV(kv fdb.KeyValue) (*ByKeyAndRevisionRe
 		return nil, err
 	}
 	key := k[0].(string)
-	versionstamp := k[1].(tuple.Versionstamp)
+	rev := k[1].(Revision)
 	unpackedTuple, err := tuple.Unpack(kv.Value)
 	if err != nil {
 		return nil, err
 	}
 	record := s.tupleToRecord(unpackedTuple)
 	record.Key = key
-	return &ByKeyAndRevisionRecord{KeyAndRevision{Key: key, Rev: versionstamp}, record}, nil
+	return &ByKeyAndRevisionRecord{KeyAndRevision{Key: key, Rev: rev}, record}, nil
 }
 
 func (s *ByKeyAndRevisionSubspace) recordToTuple(record *Record) tuple.Tuple {
@@ -97,8 +97,8 @@ func (s *ByKeyAndRevisionSubspace) tupleToRecord(t tuple.Tuple) *Record {
 		IsDelete:       t[0].(bool),
 		IsCreate:       t[1].(bool),
 		Lease:          t[2].(int64),
-		CreateRevision: t[3].(tuple.Versionstamp),
-		PrevRevision:   t[4].(tuple.Versionstamp),
+		CreateRevision: t[3].(Revision),
+		PrevRevision:   t[4].(Revision),
 		ValueSize:      t[5].(int64),
 		WriteUUID:      t[6].(tuple.UUID),
 	}

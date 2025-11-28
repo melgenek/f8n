@@ -12,12 +12,16 @@ const (
 	chunkSize = 10000
 )
 
+type Revision = int64
+
+const zeroRevision Revision = 0
+
 type RevRecord struct {
-	Rev    tuple.Versionstamp
+	Rev    Revision
 	Record *Record
 }
 
-func (r *RevRecord) GetCreateRevision() tuple.Versionstamp {
+func (r *RevRecord) GetCreateRevision() Revision {
 	if r.Record.IsCreate {
 		return r.Rev
 	} else {
@@ -30,8 +34,8 @@ type Record struct {
 	IsDelete       bool
 	IsCreate       bool
 	Lease          int64
-	CreateRevision tuple.Versionstamp
-	PrevRevision   tuple.Versionstamp
+	CreateRevision Revision
+	PrevRevision   Revision
 	ValueSize      int64
 	WriteUUID      tuple.UUID
 	Value          []byte
@@ -51,7 +55,7 @@ func (s *ByRevisionSubspace) GetSubspace() subspace.Subspace {
 	return s.subspace
 }
 
-func (s *ByRevisionSubspace) Write(tr *fdb.Transaction, rev tuple.Versionstamp, record *Record) error {
+func (s *ByRevisionSubspace) Write(tr *fdb.Transaction, rev Revision, record *Record) error {
 	if err := s.writeBlob(tr, rev, record.Value); err != nil {
 		return err
 	}
@@ -66,24 +70,24 @@ func (s *ByRevisionSubspace) Write(tr *fdb.Transaction, rev tuple.Versionstamp, 
 	return nil
 }
 
-func (s *ByRevisionSubspace) ParseKV(kv fdb.KeyValue) (tuple.Versionstamp, *Record, error) {
+func (s *ByRevisionSubspace) ParseKV(kv fdb.KeyValue) (Revision, *Record, error) {
 	k, err := s.subspace.Unpack(kv.Key)
 	if err != nil {
-		return dummyVersionstamp, nil, fmt.Errorf("failed to unpack key %v: %w", kv.Key, err)
+		return -1, nil, fmt.Errorf("failed to unpack key %v: %w", kv.Key, err)
 	}
-	versionstamp := k[0].(tuple.Versionstamp)
+	versionstamp := k[0].(Revision)
 	if len(k) != 1 {
 		panic(fmt.Sprintf("can parse only the first entry for the record. Key: %v", k))
 	}
 	unpackedTuple, err := tuple.Unpack(kv.Value)
 	if err != nil {
-		return dummyVersionstamp, nil, fmt.Errorf("failed to unpack value '%v': %w", kv.Value, err)
+		return -1, nil, fmt.Errorf("failed to unpack value '%v': %w", kv.Value, err)
 	}
 	record := s.tupleToRecord(unpackedTuple)
 	return versionstamp, record, nil
 }
 
-func (s *ByRevisionSubspace) Get(tr *fdb.Transaction, rev tuple.Versionstamp) (*Record, error) {
+func (s *ByRevisionSubspace) Get(tr *fdb.Transaction, rev Revision) (*Record, error) {
 	it, err := s.GetIterator(tr, rev)
 	if err != nil {
 		return nil, err
@@ -95,7 +99,7 @@ func (s *ByRevisionSubspace) Get(tr *fdb.Transaction, rev tuple.Versionstamp) (*
 	return record, nil
 }
 
-func (s *ByRevisionSubspace) Delete(tr *fdb.Transaction, rev tuple.Versionstamp) error {
+func (s *ByRevisionSubspace) Delete(tr *fdb.Transaction, rev Revision) error {
 	selector, err := fdb.PrefixRange(s.subspace.Pack(tuple.Tuple{rev}))
 	if err != nil {
 		return err
@@ -104,7 +108,7 @@ func (s *ByRevisionSubspace) Delete(tr *fdb.Transaction, rev tuple.Versionstamp)
 	return nil
 }
 
-func (s *ByRevisionSubspace) GetIterator(tr *fdb.Transaction, rev tuple.Versionstamp) (*fdb.RangeIterator, error) {
+func (s *ByRevisionSubspace) GetIterator(tr *fdb.Transaction, rev Revision) (*fdb.RangeIterator, error) {
 	selector, err := fdb.PrefixRange(s.subspace.Pack(tuple.Tuple{rev}))
 	if err != nil {
 		return nil, err
@@ -113,7 +117,7 @@ func (s *ByRevisionSubspace) GetIterator(tr *fdb.Transaction, rev tuple.Versions
 	return it, nil
 }
 
-func (s *ByRevisionSubspace) GetFromIterator(it *fdb.RangeIterator) (*tuple.Versionstamp, *Record, error) {
+func (s *ByRevisionSubspace) GetFromIterator(it *fdb.RangeIterator) (*Revision, *Record, error) {
 	if !it.Advance() {
 		return nil, nil, nil
 	}
@@ -145,7 +149,7 @@ func (s *ByRevisionSubspace) getBlob(it *fdb.RangeIterator, buf []byte) error {
 	return nil
 }
 
-func (s *ByRevisionSubspace) writeBlob(tr *fdb.Transaction, rev tuple.Versionstamp, value []byte) error {
+func (s *ByRevisionSubspace) writeBlob(tr *fdb.Transaction, rev Revision, value []byte) error {
 	for offset := 0; offset < len(value); offset += chunkSize {
 		end := offset + chunkSize
 		if end > len(value) {
@@ -180,8 +184,8 @@ func (s *ByRevisionSubspace) tupleToRecord(t tuple.Tuple) *Record {
 		IsDelete:       t[1].(bool),
 		IsCreate:       t[2].(bool),
 		Lease:          t[3].(int64),
-		CreateRevision: t[4].(tuple.Versionstamp),
-		PrevRevision:   t[5].(tuple.Versionstamp),
+		CreateRevision: t[4].(Revision),
+		PrevRevision:   t[5].(Revision),
 		ValueSize:      t[6].(int64),
 	}
 }

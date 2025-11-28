@@ -26,14 +26,14 @@ func WALToEtcdRequests() ([]model.EtcdRequest, []WalDump, error) {
 		if walReq.Record.IsCreate {
 			req = Create(walReq.Record.Key, walReq.Record.Value)
 		} else if walReq.Record.IsDelete {
-			req = Delete(walReq.Record.Key, fdb.VersionstampToInt64(walReq.Record.PrevRevision))
+			req = Delete(walReq.Record.Key, walReq.Record.PrevRevision)
 		} else {
-			req = Update(walReq.Record.Key, walReq.Record.Value, fdb.VersionstampToInt64(walReq.Record.PrevRevision))
+			req = Update(walReq.Record.Key, walReq.Record.Value, walReq.Record.PrevRevision)
 		}
 		requests = append(requests, req)
 		walDumps = append(walDumps, WalDump{
-			Rev:      fdb.VersionstampToInt64(walReq.Rev),
-			PrevRev:  fdb.VersionstampToInt64(walReq.Record.PrevRevision),
+			Rev:      walReq.Rev,
+			PrevRev:  walReq.Record.PrevRevision,
 			Key:      walReq.Record.Key,
 			IsCreate: walReq.Record.IsCreate,
 			IsDelete: walReq.Record.IsDelete,

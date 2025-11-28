@@ -35,7 +35,6 @@ func TestMain(m *testing.M) {
 		},
 	})
 	forceRetryTransaction = func(i int) bool { return i < 2 }
-	forceRetryTransaction = func(i int) bool { return false }
 
 	code := m.Run()
 
@@ -53,8 +52,7 @@ func TestFDB(t *testing.T) {
 	createRecords(t, f, ctx, 500, 100) // fill up fdb
 	cancelCtx()
 
-	//forceRetryTransaction = func(i int) bool { return i < 2 }
-	forceRetryTransaction = func(i int) bool { return false }
+	forceRetryTransaction = func(i int) bool { return i < 2 }
 
 	f = NewFDB(connectionString, tls.Config{}, "dir2", &sync.WaitGroup{})
 	ctx, cancelCtx = context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
@@ -69,11 +67,8 @@ func TestFDB(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result)
 
-	for {
-		_, result, err = f.List(ctx, "/registry/health", "/registry/health", 0, 0, false)
-		require.NoError(t, err)
-
-	}
+	_, result, err = f.List(ctx, "/registry/health", "/registry/health", 0, 0, false)
+	require.NoError(t, err)
 	require.Len(t, result, 1, "Expected to find /registry/health in the list, but got: %v", result)
 
 	events := orderedmap.NewOrderedMap[string, []*server.KeyValue]()
@@ -466,8 +461,9 @@ func TestCompaction(t *testing.T) {
 	require.Equal(t, int64(0), count, "Expected to count zero keys after deletion")
 
 	// Verify the compact revision is can be done for an empty list
-	_, err = f.Compact(ctx, deleteRev)
+	lastRev, err := f.Compact(ctx, deleteRev)
 	require.NoError(t, err)
+	require.Equal(t, deleteRev, lastRev, "Expected no revision changes after deletion")
 
 	// Verify the health key exists
 	_, kv, err = f.Get(ctx, "/registry/health", "", 0, 0, false)
@@ -478,6 +474,7 @@ func TestCompaction(t *testing.T) {
 	watch = f.Watch(ctx, keyName, 0)
 	select {
 	case events := <-watch.Events:
+		fmt.Println(fmt.Sprintf("Event received: %+v", events[0]))
 		require.Lenf(t, events, 0, "Expected no events after watching the deleted key")
 	case wRrr := <-watch.Errorc:
 		require.NoError(t, wRrr, "Expected no error while watching the key")
@@ -550,21 +547,6 @@ func TestFailUnavailableServer(t *testing.T) {
 
 	err := f.Start(ctx)
 	require.Error(t, err)
-}
-
-func TestVersionstamp(t *testing.T) {
-	f := NewFDB(connectionString, tls.Config{}, "dir1", &sync.WaitGroup{})
-	ctx, cancelCtx := context.WithTimeout(context.Background(), time.Duration(3)*time.Second)
-	defer cancelCtx()
-
-	err := f.Start(ctx)
-	require.NoError(t, err)
-
-	id := VersionstampToInt64(dummyVersionstamp)
-
-	versionstamp := int64ToVersionstamp(id)
-
-	require.True(t, bytes.Equal(dummyVersionstamp.Bytes(), versionstamp.Bytes()))
 }
 
 func createRecords(t *testing.T, f server.Backend, ctx context.Context, recordCount int, recordSize int) map[string][]byte {

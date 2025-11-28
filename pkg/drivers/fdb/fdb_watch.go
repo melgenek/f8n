@@ -235,14 +235,14 @@ func (c *afterCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.K
 		return nil, false, nil
 	}
 
-	if c.latestRev != 0 && VersionstampToInt64(*rev) > c.latestRev {
+	if c.latestRev != 0 && *rev > c.latestRev {
 		return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), false, nil
 	}
 
 	if c.takeKey(record.Key) {
 		event := revRecordToEvent(&RevRecord{Rev: *rev, Record: record})
 
-		if record.PrevRevision != dummyVersionstamp {
+		if record.PrevRevision != zeroRevision {
 			prevRecord, err := c.f.byRevision.Get(tr, record.PrevRevision)
 			if err != nil {
 				return nil, false, err
@@ -267,9 +267,7 @@ func (c *afterCollector) needMore() bool {
 
 func (c *afterCollector) endBatch(tr *fdb.Transaction, _ bool) error {
 	if c.latestRev == 0 {
-		if latestRevF, err := c.f.rev.GetLatestRev(tr); err != nil {
-			return err
-		} else if latestRev, err := latestRevF.Get(); err != nil {
+		if latestRev, err := c.f.rev.Get(tr); err != nil {
 			return err
 		} else {
 			c.batchLatestRev = latestRev
@@ -281,8 +279,8 @@ func (c *afterCollector) endBatch(tr *fdb.Transaction, _ bool) error {
 		if err != nil {
 			return err
 		}
-		if c.minRevision > 0 && c.minRevision < VersionstampToInt64(compactRev) {
-			c.batchCompactRev = VersionstampToInt64(compactRev)
+		if c.minRevision > 0 && c.minRevision < compactRev {
+			c.batchCompactRev = compactRev
 			return server.ErrCompacted
 		}
 	}
@@ -320,7 +318,7 @@ func (f *FDB) afterBatch(minRevision int64, takeKey func(string) bool) (int64, [
 }
 
 func (f *FDB) afterRevisionSelector(minRevision int64) fdb.SelectorRange {
-	begin := f.byRevision.GetSubspace().Pack(tuple.Tuple{int64ToVersionstamp(minRevision), math.MaxInt64})
+	begin := f.byRevision.GetSubspace().Pack(tuple.Tuple{minRevision, math.MaxInt64})
 	_, end := f.byRevision.GetSubspace().FDBRangeKeySelectors()
 
 	// https://forums.foundationdb.org/t/ranges-without-explicit-end-go/773/11

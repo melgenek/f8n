@@ -20,15 +20,9 @@ func (f *FDB) CurrentRevision(_ context.Context) (int64, error) {
 	if lastWatchRev != 0 {
 		return lastWatchRev, nil
 	} else {
-		rev, err := transact("current_rev", f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
-			if latestRev, err := f.rev.GetLatestRev(&tr); err != nil {
-				return 0, err
-			} else {
-				return latestRev.Get()
-			}
+		return transact("current_rev", f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
+			return f.rev.Get(&tr)
 		})
-
-		return rev, err
 	}
 }
 
@@ -250,8 +244,8 @@ func (c *recordCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.
 		c.batchCurrentRecord = nil
 	}
 
-	recordRev := VersionstampToInt64(nextKeyAndRevRecord.Key.Rev)
-	if (c.maxRevision == 0 || recordRev <= c.maxRevision) && (c.firstRev == 0 || recordRev <= c.firstRev) {
+	if (c.maxRevision == 0 || nextKeyAndRevRecord.Key.Rev <= c.maxRevision) &&
+		(c.firstRev == 0 || nextKeyAndRevRecord.Key.Rev <= c.firstRev) {
 		c.batchCurrentRecord = nextKeyAndRevRecord
 	}
 
@@ -271,9 +265,7 @@ func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
 
 	// Get the read revision for the first batch.
 	// Do not read records that might've been concurrently added that are over this revision.
-	if latestRevF, err := c.f.rev.GetLatestRev(tr); err != nil {
-		return err
-	} else if rev, err := latestRevF.Get(); err != nil {
+	if rev, err := c.f.rev.Get(tr); err != nil {
 		return err
 	} else {
 		c.batchRev = rev
@@ -283,7 +275,7 @@ func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
 	if c.maxRevision > 0 {
 		if compactRev, err := c.f.compactRev.Get(tr); err != nil {
 			return err
-		} else if c.maxRevision < VersionstampToInt64(compactRev) {
+		} else if c.maxRevision < compactRev {
 			return server.ErrCompacted
 		}
 	}
@@ -325,7 +317,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 		// searching for prefix
 		packedStartKey := f.byKeyAndRevision.GetSubspace().Pack(tuple.Tuple{startKey})
 		if prefix != startKey {
-			// next key afterAll the packedStartKey
+			// next key after the packedStartKey
 			packedStartKeyKey, err := fdb.Strinc(packedStartKey)
 			if err != nil {
 				return 0, fmt.Errorf("failed to create begin for listKeyValue: %w", err)

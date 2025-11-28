@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
-	//"go.etcd.io/etcd/api/v3/etcdserverpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	coordv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,10 +43,10 @@ type KV struct {
 func main() {
 	var (
 		endpoints  = flag.String("endpoints", "localhost:2379", "comma-separated etcd endpoints")
-		numKeys    = flag.Int("num-keys", 100, "number of Lease keys to create and flood")
+		numKeys    = flag.Int("num-keys", 1000, "number of Lease keys to create and flood")
 		namespace  = flag.String("namespace", "default", "Kubernetes namespace for Lease keys")
 		keyPrefix  = flag.String("key-prefix", "", "etcd key prefix")
-		numWorkers = flag.Int("workers", 10, "number of concurrent worker goroutines")
+		numWorkers = flag.Int("workers", 100, "number of concurrent worker goroutines")
 	)
 	flag.Parse()
 

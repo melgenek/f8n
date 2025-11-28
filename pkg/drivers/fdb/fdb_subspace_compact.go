@@ -15,21 +15,21 @@ func CreateCompactRevisionSubspace(directory directory.DirectorySubspace) *Compa
 	return &CompactRevisionSubspace{subspace: directory.Sub("compactRevision")}
 }
 
-func (s *CompactRevisionSubspace) Write(tr *fdb.Transaction, rev tuple.Versionstamp) {
+func (s *CompactRevisionSubspace) Write(tr *fdb.Transaction, rev Revision) {
 	tr.Set(s.subspace, tuple.Tuple{rev}.Pack())
 }
 
-func (s *CompactRevisionSubspace) Get(tr *fdb.Transaction) (tuple.Versionstamp, error) {
+func (s *CompactRevisionSubspace) Get(tr *fdb.Transaction) (Revision, error) {
 	value, err := tr.Get(s.subspace).Get()
 	if err != nil {
-		return int64ToVersionstamp(-1), err
+		return -1, err
 	}
 	if value == nil {
-		return int64ToVersionstamp(0), nil
+		return 0, nil
 	}
 	t, err := tuple.Unpack(value)
 	if err != nil {
-		return int64ToVersionstamp(-1), err
+		return -1, err
 	}
-	return t[0].(tuple.Versionstamp), nil
+	return t[0].(Revision), nil
 }

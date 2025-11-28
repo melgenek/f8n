@@ -2,16 +2,17 @@ package fdb
 
 import (
 	"github.com/urfave/cli/v2"
+	"time"
 )
 
 var (
 	Directory          = "etcd"
 	CleanDirOnStart    = false
 	LogConflictingKeys = false
-	
+	WriteBatchDuration = 2 * time.Millisecond
+
 	// For testing only
-	UseSequentialId = false
-	APITest         = false
+	APITest = false
 )
 
 func ConfigFlags() []cli.Flag {
@@ -31,6 +32,12 @@ func ConfigFlags() []cli.Flag {
 			Name:        "fdb-log-conflicting-keys",
 			Usage:       "Log conflicting keys when a transaction conflict occurs. Useful for debugging.",
 			Destination: &LogConflictingKeys,
+		},
+		&cli.DurationFlag{
+			Name:        "fdb-write-batch-duration",
+			Value:       2 * time.Millisecond,
+			Usage:       "Duration that defines how long to collect write requests in a single transaction.",
+			Destination: &WriteBatchDuration,
 		},
 	}
 }

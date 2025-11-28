@@ -71,9 +71,8 @@ var tsc = []scenarios.TestScenario{
 }
 
 func TestRobustnessExploratory(t *testing.T) {
-	logrus.SetLevel(logrus.TraceLevel)
+	logrus.SetLevel(logrus.WarnLevel)
 	fdb.APITest = true
-	fdb.UseSequentialId = true
 	fdb.CleanDirOnStart = true
 	for _, scenario := range tsc {
 		t.Run(scenario.Name, func(t *testing.T) {

@@ -3,7 +3,6 @@ package fdb
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -52,6 +51,8 @@ type FDB struct {
 
 	backgroundReadWg sync.WaitGroup
 	lastWatchRev     atomic.Int64
+
+	writeTrMgr *writeTransactionManager
 }
 
 func NewFDB(connectionString string, tlsConfig tls.Config, dirName string, wg *sync.WaitGroup) server.Backend {
@@ -125,18 +126,7 @@ func (f *FDB) Start(ctx context.Context) error {
 	f.compactRev = CreateCompactRevisionSubspace(f.dir)
 	f.rev = CreateRevisionSubspace(f.dir)
 
-	tr, err := transact("start", db, 0, func(tr fdb.Transaction) (interface{}, error) {
-		tr.Set(f.dir.Sub("dummy"), []byte("dummy"))
-		return tr, nil
-	})
-	if err != nil {
-		return err
-	}
-	firstVersion, err = tr.(fdb.Transaction).GetCommittedVersion()
-	if err != nil {
-		return err
-	}
-	fmt.Printf("First version: %d\n", firstVersion)
+	f.writeTrMgr = f.newWriteTransactionManager()
 
 	// https://github.com/kubernetes/kubernetes/blob/442a69c3bdf6fe8e525b05887e57d89db1e2f3a5/staging/src/k8s.io/apiserver/pkg/storage/storagebackend/factory/etcd3.go#L97
 	if !APITest {
