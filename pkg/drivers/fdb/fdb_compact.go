@@ -3,9 +3,10 @@ package fdb
 import (
 	"context"
 	"fmt"
+	"math"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
-	"math"
 )
 
 type compactProcessor struct {
@@ -34,13 +35,15 @@ func (c *compactProcessor) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb
 		return nil, false, nil
 	}
 
-	lastRecord, err := c.f.getLast(tr, record.Key)
+	lastRecord, err := c.f.getLast(tr, record.Key, toSnapshot)
 	if err != nil {
 		return nil, false, err
 	}
+	if lastRecord == nil {
+		return nil, false, nil
+	}
 
 	if lastRecord.Key.Rev != *rev || record.IsDelete {
-		fmt.Println("Deleting record", record.Key, *rev)
 		c.f.byKeyAndRevision.Delete(tr, &KeyAndRevision{Key: record.Key, Rev: *rev})
 		if err := c.f.byRevision.Delete(tr, *rev); err != nil {
 			return nil, false, err
@@ -55,7 +58,7 @@ func (c *compactProcessor) endBatch(tr *fdb.Transaction, isLast bool) error {
 		c.f.compactRev.Write(tr, c.batchCompacted)
 	}
 	if isLast {
-		if rev, err := c.f.rev.Get(tr); err != nil {
+		if rev, err := c.f.rev.Get(tr, toSnapshot); err != nil {
 			return err
 		} else {
 			c.batchRev = rev
@@ -77,7 +80,7 @@ func (f *FDB) Compact(_ context.Context, endRev int64) (int64, error) {
 	end := fdb.FirstGreaterThan(f.byRevision.GetSubspace().Pack(tuple.Tuple{endRev}))
 
 	processor := newCompactProcessor(f)
-	if err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, processor); err != nil {
+	if err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, processor, splitRangeAfterDurationForRead, toSnapshot); err != nil {
 		return 0, err
 	} else {
 		return processor.rev, nil

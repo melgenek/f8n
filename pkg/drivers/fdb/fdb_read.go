@@ -3,11 +3,12 @@ package fdb
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
-	"strings"
 )
 
 type RevResult struct {
@@ -21,7 +22,7 @@ func (f *FDB) CurrentRevision(_ context.Context) (int64, error) {
 		return lastWatchRev, nil
 	} else {
 		return transact("current_rev", f.db, 0, func(tr fdb.Transaction) (ret int64, e error) {
-			return f.rev.Get(&tr)
+			return f.rev.Get(&tr, toReadTr)
 		})
 	}
 }
@@ -48,9 +49,9 @@ func (f *FDB) Get(_ context.Context, key, rangeEnd string, _, revision int64, ke
 	return rev, kvs[0], nil
 }
 
-func (f *FDB) getLast(tr *fdb.Transaction, key string) (*ByKeyAndRevisionRecord, error) {
+func (f *FDB) getLast(tr *fdb.Transaction, key string, toReadTr ToReadTransaction) (*ByKeyAndRevisionRecord, error) {
 	keyRange := f.byKeyAndRevision.GetSubspace().Sub(key)
-	it := tr.GetRange(keyRange, fdb.RangeOptions{Limit: 1, Mode: fdb.StreamingModeExact, Reverse: true}).Iterator()
+	it := toReadTr(*tr).GetRange(keyRange, fdb.RangeOptions{Limit: 1, Mode: fdb.StreamingModeExact, Reverse: true}).Iterator()
 	if !it.Advance() {
 		return nil, nil
 	}
@@ -265,7 +266,7 @@ func (c *recordCollector) endBatch(tr *fdb.Transaction, isLast bool) error {
 
 	// Get the read revision for the first batch.
 	// Do not read records that might've been concurrently added that are over this revision.
-	if rev, err := c.f.rev.Get(tr); err != nil {
+	if rev, err := c.f.rev.Get(tr, toReadTr); err != nil {
 		return err
 	} else {
 		c.batchRev = rev
@@ -347,7 +348,7 @@ func (f *FDB) listWithCollector(caller, prefix, startKey string, maxRevision int
 	}
 
 	rc := newRecordCollector(f, maxRevision, collector)
-	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, rc)
+	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, rc, splitRangeAfterDurationForRead, toReadTr)
 	if err != nil {
 		return 0, err
 	}

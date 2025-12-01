@@ -17,14 +17,6 @@ type ByKeyAndRevisionRecord struct {
 	Value *Record
 }
 
-func (r *ByKeyAndRevisionRecord) GetCreateRevision() Revision {
-	if r.Value.IsCreate {
-		return r.Key.Rev
-	} else {
-		return r.Value.CreateRevision
-	}
-}
-
 type ByKeyAndRevisionSubspace struct {
 	subspace subspace.Subspace
 }
@@ -53,6 +45,20 @@ func (s *ByKeyAndRevisionSubspace) Delete(tr *fdb.Transaction, key *KeyAndRevisi
 	tr.Clear(s.subspace.Pack(tuple.Tuple{key.Key, key.Rev}))
 }
 
+func (s *ByKeyAndRevisionSubspace) Get(tr *fdb.Transaction, key string, rev Revision) (*ByKeyAndRevisionRecord, error) {
+	value, err := tr.Get(s.subspace.Pack(tuple.Tuple{key, rev})).Get()
+	if err != nil {
+		return nil, err
+	}
+
+	record, err := s.parseValue(value, key)
+	if err != nil {
+		return nil, err
+	} else {
+		return &ByKeyAndRevisionRecord{KeyAndRevision{Key: key, Rev: rev}, record}, nil
+	}
+}
+
 func (s *ByKeyAndRevisionSubspace) GetFromIterator(it *fdb.RangeIterator) (*ByKeyAndRevisionRecord, error) {
 	if !it.Advance() {
 		return nil, nil
@@ -71,13 +77,22 @@ func (s *ByKeyAndRevisionSubspace) parseKV(kv fdb.KeyValue) (*ByKeyAndRevisionRe
 	}
 	key := k[0].(string)
 	rev := k[1].(Revision)
-	unpackedTuple, err := tuple.Unpack(kv.Value)
+	record, err := s.parseValue(kv.Value, key)
+	if err != nil {
+		return nil, err
+	} else {
+		return &ByKeyAndRevisionRecord{KeyAndRevision{Key: key, Rev: rev}, record}, nil
+	}
+}
+
+func (s *ByKeyAndRevisionSubspace) parseValue(value []byte, key string) (*Record, error) {
+	unpackedTuple, err := tuple.Unpack(value)
 	if err != nil {
 		return nil, err
 	}
 	record := s.tupleToRecord(unpackedTuple)
 	record.Key = key
-	return &ByKeyAndRevisionRecord{KeyAndRevision{Key: key, Rev: rev}, record}, nil
+	return record, nil
 }
 
 func (s *ByKeyAndRevisionSubspace) recordToTuple(record *Record) tuple.Tuple {

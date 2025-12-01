@@ -13,8 +13,8 @@ const (
 	// https://apple.github.io/foundationdb/api-error-codes.html
 	notCommittedErrorCode = 1020 // Transaction not committed due to conflict with another transaction
 
-	splitRangeAfterDuration  = 1 * time.Second
-	transactionMaxRetryCount = 1000
+	splitRangeAfterDurationForRead = 1 * time.Second
+	transactionMaxRetryCount       = 1000
 )
 
 // var for testing
@@ -34,11 +34,15 @@ type batchResult struct {
 	collectorNeedsMore bool
 }
 
-func processRange(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) error {
+func processRange(db fdb.Database,
+	selector fdb.SelectorRange,
+	collector Processor[*fdb.RangeIterator],
+	splitRangeAfterDuration time.Duration,
+	toReadTr ToReadTransaction) error {
 	beginSelector := selector.Begin
 
 	for i := 0; ; i++ {
-		res, err := processBatch(db, fdb.SelectorRange{Begin: beginSelector, End: selector.End}, collector)
+		res, err := processBatch(db, fdb.SelectorRange{Begin: beginSelector, End: selector.End}, collector, splitRangeAfterDuration, toReadTr)
 		if err != nil {
 			return err
 		}
@@ -51,7 +55,11 @@ func processRange(db fdb.Database, selector fdb.SelectorRange, collector Process
 	return nil
 }
 
-func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator]) (batchResult, error) {
+func processBatch(db fdb.Database,
+	selector fdb.SelectorRange,
+	collector Processor[*fdb.RangeIterator],
+	splitRangeAfterDuration time.Duration,
+	toReadTr ToReadTransaction) (batchResult, error) {
 	before := time.Now()
 	defer func() {
 		dur := time.Since(before)
@@ -65,7 +73,7 @@ func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Process
 		res := batchResult{collectorNeedsMore: true}
 
 		start := time.Now()
-		it := tr.GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
+		it := toReadTr(tr).GetRange(selector, fdb.RangeOptions{Mode: fdb.StreamingModeIterator}).Iterator()
 
 		collector.startBatch()
 		for i := 0; res.collectorNeedsMore; i++ {
@@ -179,7 +187,6 @@ func retryable[T any](wrapped func() (T, error), onError func(fdb.Error) fdb.Fut
 		if e != nil {
 			return
 		}
-		logrus.Tracef("Retrying %v", ep)
 	}
 }
 
@@ -192,4 +199,13 @@ func panicToError(e *error) {
 			panic(r)
 		}
 	}
+}
+
+type ToReadTransaction = func(transaction fdb.Transaction) fdb.ReadTransaction
+
+func toReadTr(tr fdb.Transaction) fdb.ReadTransaction {
+	return tr
+}
+func toSnapshot(tr fdb.Transaction) fdb.ReadTransaction {
+	return tr.Snapshot()
 }

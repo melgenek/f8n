@@ -1,8 +1,9 @@
 package fdb
 
 import (
-	"github.com/urfave/cli/v2"
 	"time"
+
+	"github.com/urfave/cli/v2"
 )
 
 var (
@@ -25,11 +26,13 @@ func ConfigFlags() []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:        "fdb-clean-directory-on-start",
+			Value:       false,
 			Usage:       "Clean the directory on start. Useful for testing.",
 			Destination: &CleanDirOnStart,
 		},
 		&cli.BoolFlag{
 			Name:        "fdb-log-conflicting-keys",
+			Value:       false,
 			Usage:       "Log conflicting keys when a transaction conflict occurs. Useful for debugging.",
 			Destination: &LogConflictingKeys,
 		},

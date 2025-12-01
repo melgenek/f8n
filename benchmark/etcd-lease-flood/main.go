@@ -89,7 +89,10 @@ func main() {
 	log.Printf("Created %d initial keys", *numKeys)
 
 	// Metrics tracking
-	var putCount int64
+	var (
+		putCount      int64
+		totalDuration int64
+	)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -103,8 +106,45 @@ func main() {
 				return
 			case <-ticker.C:
 				count := atomic.LoadInt64(&putCount)
-				fmt.Printf("Puts/sec: %d\n", count)
+				duration := atomic.LoadInt64(&totalDuration)
+
+				avgDuration := float64(0)
+				if count > 0 {
+					avgDuration = float64(duration) / float64(count)
+				}
+
+				fmt.Printf("Puts/sec: %d, Avg duration: %.2fms\n", count, avgDuration/1000000)
+
 				atomic.StoreInt64(&putCount, 0)
+				atomic.StoreInt64(&totalDuration, 0)
+			}
+		}
+	}()
+
+	// Start compaction goroutine
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				resp, err := cli.Get(ctx, kvs[0].key)
+				if err != nil {
+					log.Printf("Failed to get latest revision for compaction: %v", err)
+					continue
+				}
+				rev := resp.Header.Revision
+				log.Printf("Compacting etcd at revision %d", rev)
+				start := time.Now()
+				_, err = cli.Compact(ctx, rev)
+				duration := time.Since(start)
+				if err != nil {
+					log.Printf("Compact completed in %v, but failed with: %v", duration, err)
+				} else {
+					log.Printf("Compact completed in %v at revision %d", duration, rev)
+				}
 			}
 		}
 	}()
@@ -117,7 +157,7 @@ func main() {
 			defer wg.Done()
 			start := (len(kvs) / *numWorkers) * workerID
 			end := start + (len(kvs) / *numWorkers)
-			worker(cli, kvs[start:end], &putCount, workerID)
+			worker(cli, kvs[start:end], &putCount, &totalDuration, workerID)
 		}(i)
 	}
 
@@ -125,17 +165,21 @@ func main() {
 	wg.Wait()
 }
 
-func worker(cli *clientv3.Client, kvs []KV, putCount *int64, workerID int) {
+func worker(cli *clientv3.Client, kvs []KV, putCount *int64, totalDuration *int64, workerID int) {
 	idx := 0
 	for {
 		kv := kvs[idx]
 
+		start := time.Now()
 		rev, err := optimisticPut(cli, context.Background(), kv.key, kv.serializedValue, kv.lastRevision)
+		duration := time.Since(start)
+
 		if err != nil {
 			log.Printf("Worker %d: Failed to update key %s: %v", workerID, kv.key, err)
 		} else {
 			kvs[idx].lastRevision = rev
 			atomic.AddInt64(putCount, 1)
+			atomic.AddInt64(totalDuration, duration.Nanoseconds())
 		}
 
 		idx++
@@ -158,13 +202,11 @@ func optimisticPut(k *clientv3.Client, ctx context.Context, key string, value st
 	}
 
 	if txnResp.Succeeded {
-		//log.Printf("Successs to update key %v", txnResp)
 		return txnResp.Responses[0].Response.(*etcdserverpb.ResponseOp_ResponsePut).ResponsePut.Header.Revision, nil
 	} else {
 		log.Printf("Failed to update key %v", txnResp)
 		return txnResp.Responses[0].Response.(*etcdserverpb.ResponseOp_ResponseRange).ResponseRange.Kvs[0].ModRevision, nil
 	}
-	//return 1, nil
 }
 
 func createLease(name, namespace string) coordv1.Lease {

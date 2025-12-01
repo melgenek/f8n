@@ -18,8 +18,8 @@ func CreateRevisionSubspace(directory directory.DirectorySubspace) *RevisionSubs
 	return &RevisionSubspace{subspace: directory.Sub("rev")}
 }
 
-func (s *RevisionSubspace) Get(tr *fdb.Transaction) (Revision, error) {
-	value, err := tr.Get(s.subspace).Get()
+func (s *RevisionSubspace) Get(tr *fdb.Transaction, toReadTr ToReadTransaction) (Revision, error) {
+	value, err := toReadTr(*tr).Get(s.subspace).Get()
 	if err != nil {
 		return -1, err
 	}

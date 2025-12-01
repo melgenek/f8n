@@ -1,15 +1,16 @@
 package fdb
 
 import (
+	"math"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
-	"math"
 )
 
 func (f *FDB) ReadWAL() ([]*RevRecord, error) {
 	collector := newWalCollector(f)
 	begin, end := f.byRevision.GetSubspace().FDBRangeKeySelectors()
-	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, collector)
+	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, collector, splitRangeAfterDurationForRead, toReadTr)
 	return collector.records, err
 }
 

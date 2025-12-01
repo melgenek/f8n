@@ -27,7 +27,7 @@ spec:
             topologyKey: "kubernetes.io/hostname"
       containers:
         - name: f8n
-          image: fra.vultrcr.com/f8ntest/f8n:0.15.0
+          image: fra.vultrcr.com/f8ntest/f8n:0.16.0
           resources:
             requests:
               cpu: 3

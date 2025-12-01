@@ -163,7 +163,7 @@ spec:
             # Set the LD_LIBRARY_PATH environment variable to tell FoundationDB to load its primary client library from this directory instead of the directory provided by the image.
             - name: LD_LIBRARY_PATH
               value: /usr/bin/fdb/primary/lib
-          image: foundationdb/fdb-kubernetes-operator:v2.16.0
+          image: foundationdb/fdb-kubernetes-operator:v2.18.0
           name: manager
           ports:
             - containerPort: 8080

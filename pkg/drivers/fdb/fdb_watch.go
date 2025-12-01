@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strings"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
-	"math"
-	"strings"
 )
 
 // https://github.com/etcd-io/etcd/blob/f072712e29a2dafc92e7cfb3c76cea60e0d508b2/server/storage/mvcc/watcher_group.go#L28
@@ -267,7 +268,7 @@ func (c *afterCollector) needMore() bool {
 
 func (c *afterCollector) endBatch(tr *fdb.Transaction, _ bool) error {
 	if c.latestRev == 0 {
-		if latestRev, err := c.f.rev.Get(tr); err != nil {
+		if latestRev, err := c.f.rev.Get(tr, toReadTr); err != nil {
 			return err
 		} else {
 			c.batchLatestRev = latestRev
@@ -297,7 +298,7 @@ func (f *FDB) afterAll(minRevision int64, takeKey func(string) bool) (AfterResul
 	selector := f.afterRevisionSelector(minRevision)
 
 	collector := newAfterCollector(f, minRevision, true, 0, takeKey)
-	err := processRange(f.db, selector, collector)
+	err := processRange(f.db, selector, collector, splitRangeAfterDurationForRead, toReadTr)
 	currentRevision := collector.latestRev
 	if len(collector.events) > 0 {
 		currentRevision = collector.events[len(collector.events)-1].KV.ModRevision
@@ -313,7 +314,7 @@ func (f *FDB) afterBatch(minRevision int64, takeKey func(string) bool) (int64, [
 	selector := f.afterRevisionSelector(minRevision)
 
 	collector := newAfterCollector(f, minRevision, false, maxBatchSize, takeKey)
-	_, err := processBatch(f.db, selector, collector)
+	_, err := processBatch(f.db, selector, collector, splitRangeAfterDurationForRead, toReadTr)
 	return collector.latestRev, collector.events, err
 }
 

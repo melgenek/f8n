@@ -3,13 +3,14 @@ package fdb
 import (
 	"bytes"
 	"context"
+	"sync/atomic"
+	"time"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/k3s-io/kine/pkg/server"
 	"github.com/sirupsen/logrus"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	"sync/atomic"
-	"time"
 )
 
 const maxRecordSize = 2 * 1024 * 1024 // 2 MiB
@@ -31,7 +32,7 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 	// https://apple.github.io/foundationdb/automatic-idempotency.html
 	lastWriteUUID := createUUID()
 	op := func(tr *fdb.Transaction, getNewRev getRev, getLatestRev getRev) (writeResult, error) {
-		lastRecord, err := f.getLast(tr, key)
+		lastRecord, err := f.getLast(tr, key, toReadTr)
 		if err != nil {
 			return noWriteResult, err
 		}
@@ -58,6 +59,7 @@ func (f *FDB) Create(_ context.Context, key string, value []byte, lease int64) (
 		}
 
 		newRev := getNewRev()
+		createRecord.CreateRevision = newRev
 		uuid, err := f.append(tr, newRev, createRecord)
 		if err != nil {
 			return noWriteResult, err
@@ -80,7 +82,7 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 
 	lastWriteUUID := createUUID()
 	op := func(tr *fdb.Transaction, getNewRev getRev, getLatestRev getRev) (writeResult, error) {
-		lastRecord, err := f.getLast(tr, key)
+		lastRecord, err := f.getLast(tr, key, toReadTr)
 		if err != nil {
 			return noWriteResult, err
 		}
@@ -115,7 +117,7 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 			Lease:          lease,
 			ValueSize:      int64(len(value)),
 			Value:          value,
-			CreateRevision: lastRecord.GetCreateRevision(),
+			CreateRevision: lastRecord.Value.CreateRevision,
 			PrevRevision:   lastRecord.Key.Rev,
 		}
 
@@ -142,7 +144,7 @@ func (f *FDB) Update(_ context.Context, key string, value []byte, revision, leas
 func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *server.KeyValue, bool, error) {
 	lastWriteUUID := createUUID()
 	op := func(tr *fdb.Transaction, getNewRev getRev, getLatestRev getRev) (writeResult, error) {
-		lastRecord, err := f.getLast(tr, key)
+		lastRecord, err := f.getLast(tr, key, toReadTr)
 		if err != nil {
 			return noWriteResult, err
 		}
@@ -184,7 +186,7 @@ func (f *FDB) Delete(_ context.Context, key string, revision int64) (int64, *ser
 			Lease:          record.Lease,
 			ValueSize:      record.ValueSize,
 			Value:          record.Value,
-			CreateRevision: lastRecord.GetCreateRevision(),
+			CreateRevision: lastRecord.Value.CreateRevision,
 			PrevRevision:   lastRecord.Key.Rev,
 		}
 
@@ -244,7 +246,7 @@ func (f *FDB) newWriteTransactionManager() *writeTransactionManager {
 			_, err := transact("writer", f.db, 0, func(tr fdb.Transaction) (int64, error) {
 				iteration++
 
-				rev, err := f.rev.Get(&tr)
+				rev, err := f.rev.Get(&tr, toReadTr)
 				if err != nil {
 					return 0, err
 				}

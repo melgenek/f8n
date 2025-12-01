@@ -9,7 +9,7 @@ build:
 		--platform=$(PLATFORMS) \
 		--target=package \
 		--network=host \
-		-t fra.vultrcr.com/f8ntest/f8n:0.15.0 .
+		-t fra.vultrcr.com/f8ntest/f8n:0.16.0 .
 
 .PHONY: run-tests
 run-tests:
