@@ -10,7 +10,7 @@ import (
 func (f *FDB) ReadWAL() ([]*RevRecord, error) {
 	collector := newWalCollector(f)
 	begin, end := f.byRevision.GetSubspace().FDBRangeKeySelectors()
-	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, collector, splitRangeAfterDurationForRead, toReadTr)
+	err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, collector, toReadTr)
 	return collector.records, err
 }
 

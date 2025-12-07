@@ -13,8 +13,8 @@ const (
 	// https://apple.github.io/foundationdb/api-error-codes.html
 	notCommittedErrorCode = 1020 // Transaction not committed due to conflict with another transaction
 
-	splitRangeAfterDurationForRead = 1 * time.Second
-	transactionMaxRetryCount       = 1000
+	splitRangeAfterDuration  = 1 * time.Second
+	transactionMaxRetryCount = 1000
 )
 
 // var for testing
@@ -34,15 +34,11 @@ type batchResult struct {
 	collectorNeedsMore bool
 }
 
-func processRange(db fdb.Database,
-	selector fdb.SelectorRange,
-	collector Processor[*fdb.RangeIterator],
-	splitRangeAfterDuration time.Duration,
-	toReadTr ToReadTransaction) error {
+func processRange(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator], toReadTr ToReadTransaction) error {
 	beginSelector := selector.Begin
 
 	for i := 0; ; i++ {
-		res, err := processBatch(db, fdb.SelectorRange{Begin: beginSelector, End: selector.End}, collector, splitRangeAfterDuration, toReadTr)
+		res, err := processBatch(db, fdb.SelectorRange{Begin: beginSelector, End: selector.End}, collector, toReadTr)
 		if err != nil {
 			return err
 		}
@@ -55,11 +51,7 @@ func processRange(db fdb.Database,
 	return nil
 }
 
-func processBatch(db fdb.Database,
-	selector fdb.SelectorRange,
-	collector Processor[*fdb.RangeIterator],
-	splitRangeAfterDuration time.Duration,
-	toReadTr ToReadTransaction) (batchResult, error) {
+func processBatch(db fdb.Database, selector fdb.SelectorRange, collector Processor[*fdb.RangeIterator], toReadTr ToReadTransaction) (batchResult, error) {
 	before := time.Now()
 	defer func() {
 		dur := time.Since(before)

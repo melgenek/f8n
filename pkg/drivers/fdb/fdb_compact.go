@@ -23,17 +23,17 @@ type compactProcessor struct {
 }
 
 func newCompactProcessor(f *FDB) *compactProcessor {
-	g, ctx := errgroup.WithContext(f.ctx)
-	g.SetLimit(50)
 	return &compactProcessor{
-		f:    f,
-		g:    g,
-		gCtx: ctx,
+		f: f,
 	}
 }
 
 func (c *compactProcessor) startBatch() {
 	c.batchCompacted = zeroRevision
+	g, ctx := errgroup.WithContext(c.f.ctx)
+	g.SetLimit(50)
+	c.g = g
+	c.gCtx = ctx
 }
 
 func (c *compactProcessor) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.Key, bool, error) {
@@ -76,6 +76,9 @@ func (c *compactProcessor) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb
 }
 
 func (c *compactProcessor) endBatch(tr *fdb.Transaction, isLast bool) error {
+	if err := c.g.Wait(); err != nil {
+		return err
+	}
 	if c.batchCompacted != zeroRevision {
 		c.f.compactRev.Write(tr, c.batchCompacted)
 	}
@@ -102,7 +105,7 @@ func (f *FDB) Compact(_ context.Context, endRev int64) (int64, error) {
 	end := fdb.FirstGreaterThan(f.byRevision.GetSubspace().Pack(tuple.Tuple{endRev}))
 
 	processor := newCompactProcessor(f)
-	if err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, processor, splitRangeAfterDurationForRead, toSnapshot); err != nil {
+	if err := processRange(f.db, fdb.SelectorRange{Begin: begin, End: end}, processor, toSnapshot); err != nil {
 		return 0, err
 	} else {
 		return processor.rev, nil

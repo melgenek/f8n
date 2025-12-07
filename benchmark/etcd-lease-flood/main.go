@@ -46,7 +46,7 @@ func main() {
 		numKeys    = flag.Int("num-keys", 1000, "number of Lease keys to create and flood")
 		namespace  = flag.String("namespace", "default", "Kubernetes namespace for Lease keys")
 		keyPrefix  = flag.String("key-prefix", "", "etcd key prefix")
-		numWorkers = flag.Int("workers", 100, "number of concurrent worker goroutines")
+		numWorkers = flag.Int("workers", 200, "number of concurrent worker goroutines")
 	)
 	flag.Parse()
 
@@ -117,14 +117,6 @@ func main() {
 					avgPDuration = float64(pDuration) / float64(pCount)
 				}
 
-				var lastPutRev int64
-				revisionMap.Range(func(key, value any) bool {
-					if key.(int64) > lastPutRev {
-						lastPutRev = key.(int64)
-					}
-					return true
-				})
-
 				wCount := atomic.SwapInt64(&watchCount, 0)
 				wTotalLag := atomic.SwapInt64(&watchTotalLag, 0)
 				wLastRev := atomic.LoadInt64(&watchLastRev)
@@ -134,8 +126,8 @@ func main() {
 					avgWLag = float64(wTotalLag) / float64(wCount)
 				}
 
-				log.Printf("Rev: %d. Puts/sec: %d. Avg duration: %.2fms. Watch rev: %d. Watch batch size: %d. Avg watch lag: %.2fms\n",
-					lastPutRev, pCount, avgPDuration/1000000,
+				log.Printf("Puts/sec: %d. Avg duration: %.2fms. Watch rev: %d. Watched count: %d. Avg watch lag: %.2fms\n",
+					pCount, avgPDuration/1000000,
 					wLastRev, wCount, avgWLag/1000000)
 			}
 		}
@@ -143,6 +135,7 @@ func main() {
 
 	// Start compaction goroutine
 	go func() {
+		var lastObservedRev int64
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -150,21 +143,23 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				if lastObservedRev != 0 {
+					log.Printf("Compacting etcd at revision %d", lastObservedRev)
+					start := time.Now()
+					_, err = cli.Compact(ctx, lastObservedRev)
+					duration := time.Since(start)
+					if err != nil {
+						log.Printf("Compact completed in %v, but failed with: %v", duration, err)
+					} else {
+						log.Printf("Compact completed in %v at revision %d", duration, lastObservedRev)
+					}
+				}
 				resp, err := cli.Get(ctx, kvs[0].key)
 				if err != nil {
 					log.Printf("Failed to get latest revision for compaction: %v", err)
 					continue
 				}
-				rev := resp.Header.Revision
-				log.Printf("Compacting etcd at revision %d", rev)
-				start := time.Now()
-				_, err = cli.Compact(ctx, rev)
-				duration := time.Since(start)
-				if err != nil {
-					log.Printf("Compact completed in %v, but failed with: %v", duration, err)
-				} else {
-					log.Printf("Compact completed in %v at revision %d", duration, rev)
-				}
+				lastObservedRev = resp.Header.Revision
 			}
 		}
 	}()
@@ -177,6 +172,9 @@ func main() {
 			case <-ctx.Done():
 				return
 			case watchResp := <-watchCh:
+				if watchResp.Canceled {
+					log.Fatalf("Watch cancelled with error: %v", watchResp.Err())
+				}
 				for _, ev := range watchResp.Events {
 					if val, ok := revisionMap.LoadAndDelete(ev.Kv.ModRevision); ok {
 						writeTime := val.(time.Time)

@@ -3,6 +3,11 @@ start-fdb:
 	docker compose -f docker-compose-fdb.yaml up --force-recreate -d
 	docker exec -ti fdb-local fdbcli
 
+.PHONY: start-etcd
+start-etcd:
+	docker compose -f docker-compose-etcd.yaml up --force-recreate -d
+	docker exec -ti etcd-local  etcdctl endpoint status --write-out=table
+
 .PHONY: start-k3s
 start-k3s:
 	docker compose -f docker-compose-k3s.yaml up --force-recreate
@@ -21,3 +26,4 @@ test-conformance:
 		--entrypoint /usr/local/bin/kubeconformance \
 		registry.k8s.io/conformance:"$$(docker exec k3s k3s --version | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+')"
 #		-e E2E_SKIP="StorageVersionAPI|Slow|Flaky" \
+

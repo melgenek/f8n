@@ -392,7 +392,7 @@ func TestCompaction(t *testing.T) {
 	// Compact the database
 	compactRev, err := f.Compact(ctx, updatedRev)
 	require.NoError(t, err)
-	require.Greater(t, compactRev, int64(0), "Expected a valid revision after compaction")
+	require.Equal(t, compactRev, updatedRev, "Expected a valid revision after compaction")
 
 	// Get value by revision
 	_, _, err = f.Get(ctx, keyName, "", 0, updatedRev-1, false)
@@ -510,6 +510,8 @@ func TestWatchAll(t *testing.T) {
 		select {
 		case events := <-w.Events:
 			totalRecords += len(events)
+		case err := <-w.Errorc:
+			require.Fail(t, "cannot start the watch", err)
 		case <-ctx.Done():
 			require.Fail(t, "context done")
 		}

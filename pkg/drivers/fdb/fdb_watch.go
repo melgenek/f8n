@@ -167,6 +167,11 @@ func (f *FDB) poll(result chan interface{}, pollStart int64) {
 		before := time.Now()
 		for lastRev, events, err = f.afterBatch(currentRev, func(s string) bool { return true }); err != nil; {
 			logrus.Errorf("Error in 'afterBatch' err=%v", err)
+			select {
+			case <-f.ctx.Done():
+				watchFuture.Cancel()
+				return
+			}
 		}
 		logrus.Tracef("AFTER POLL lastRev=%d => res=%v err=%v dur=%v", currentRev, len(events), err, time.Since(before).Milliseconds())
 		for _, event := range events {
@@ -216,8 +221,6 @@ func newAfterCollector(f *FDB, minRevision int64, checkCompacted bool, limit int
 	if capacity == 0 {
 		capacity = 100
 	}
-	g, ctx := errgroup.WithContext(f.ctx)
-	g.SetLimit(50)
 	return &afterCollector{
 		f:              f,
 		limit:          limit,
@@ -225,8 +228,6 @@ func newAfterCollector(f *FDB, minRevision int64, checkCompacted bool, limit int
 		takeKey:        takeKey,
 		minRevision:    minRevision,
 		checkCompacted: checkCompacted,
-		fetchPrevGroup: g,
-		fetchPrevCtx:   ctx,
 		batchEvents:    make([]*server.Event, 0, capacity),
 		events:         make([]*server.Event, 0, capacity),
 	}
@@ -236,7 +237,10 @@ func (c *afterCollector) startBatch() {
 	c.batchEvents = c.batchEvents[len(c.batchEvents):]
 	c.batchLatestRev = 0
 	c.batchCompactRev = 0
-
+	g, ctx := errgroup.WithContext(c.f.ctx)
+	g.SetLimit(50)
+	c.fetchPrevGroup = g
+	c.fetchPrevCtx = ctx
 }
 
 func (c *afterCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.Key, bool, error) {
@@ -258,6 +262,11 @@ func (c *afterCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.K
 
 		if record.PrevRevision != zeroRevision {
 			c.fetchPrevGroup.Go(func() error {
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Printf("WHAT? %v", r)
+					}
+				}()
 				if prevRecord, err := c.f.byRevision.Get(tr, record.PrevRevision); err != nil {
 					return err
 				} else if prevRecord != nil {
@@ -311,7 +320,7 @@ func (f *FDB) afterAll(minRevision int64, takeKey func(string) bool) (AfterResul
 	selector := f.afterRevisionSelector(minRevision, math.MaxInt64)
 
 	collector := newAfterCollector(f, minRevision, true, 0, takeKey)
-	err := processRange(f.db, selector, collector, splitRangeAfterDurationForRead, toReadTr)
+	err := processRange(f.db, selector, collector, toReadTr)
 	currentRevision := collector.latestRev
 	if len(collector.events) > 0 {
 		currentRevision = collector.events[len(collector.events)-1].KV.ModRevision
@@ -327,7 +336,7 @@ func (f *FDB) afterBatch(minRevision int64, takeKey func(string) bool) (int64, [
 	selector := f.afterRevisionSelector(minRevision, minRevision+int64(maxBatchSize))
 
 	collector := newAfterCollector(f, minRevision, false, maxBatchSize, takeKey)
-	_, err := processBatch(f.db, selector, collector, splitRangeAfterDurationForRead, toReadTr)
+	_, err := processBatch(f.db, selector, collector, toReadTr)
 	return collector.latestRev, collector.events, err
 }
 
