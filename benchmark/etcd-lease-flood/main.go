@@ -93,6 +93,7 @@ func main() {
 		putCount      int64
 		totalDuration int64
 	)
+	revisionMap := &sync.Map{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -113,7 +114,14 @@ func main() {
 					avgDuration = float64(duration) / float64(count)
 				}
 
-				fmt.Printf("Puts/sec: %d, Avg duration: %.2fms\n", count, avgDuration/1000000)
+				var lastRev int64
+				revisionMap.Range(func(key, value any) bool {
+					if key.(int64) > lastRev {
+						lastRev = key.(int64)
+					}
+					return true
+				})
+				fmt.Printf("Rev: %d. Puts/sec: %d. Avg duration: %.2fms\n", lastRev, count, avgDuration/1000000)
 
 				atomic.StoreInt64(&putCount, 0)
 				atomic.StoreInt64(&totalDuration, 0)
@@ -149,6 +157,44 @@ func main() {
 		}
 	}()
 
+	// Start watch goroutine
+	go func() {
+		var totalLag int64
+		var watchCount int64
+		var lastRev int64
+		watchCh := cli.Watch(ctx, "/", clientv3.WithPrefix(), clientv3.WithRev(1))
+
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case watchResp := <-watchCh:
+				for _, ev := range watchResp.Events {
+					if val, ok := revisionMap.LoadAndDelete(ev.Kv.ModRevision); ok {
+						writeTime := val.(time.Time)
+						lag := time.Since(writeTime)
+						totalLag += int64(lag)
+						watchCount += 1
+					}
+				}
+				if len(watchResp.Events) > 0 {
+					lastRev = watchResp.Events[0].Kv.ModRevision
+				}
+			case <-ticker.C:
+				avgLag := float64(0)
+				if watchCount > 0 {
+					avgLag = float64(totalLag) / float64(watchCount)
+				}
+				fmt.Printf("Watch rev: %d. Count: %d. Avg watch lag: %.2fms\n", lastRev, watchCount, avgLag/1000000)
+				totalLag = 0
+				watchCount = 0
+			}
+		}
+	}()
+
 	// Create worker pool
 	var wg sync.WaitGroup
 	for i := 0; i < *numWorkers; i++ {
@@ -157,7 +203,7 @@ func main() {
 			defer wg.Done()
 			start := (len(kvs) / *numWorkers) * workerID
 			end := start + (len(kvs) / *numWorkers)
-			worker(cli, kvs[start:end], &putCount, &totalDuration, workerID)
+			worker(cli, kvs[start:end], &putCount, &totalDuration, revisionMap, workerID)
 		}(i)
 	}
 
@@ -165,7 +211,7 @@ func main() {
 	wg.Wait()
 }
 
-func worker(cli *clientv3.Client, kvs []KV, putCount *int64, totalDuration *int64, workerID int) {
+func worker(cli *clientv3.Client, kvs []KV, putCount *int64, totalDuration *int64, revisionMap *sync.Map, workerID int) {
 	idx := 0
 	for {
 		kv := kvs[idx]
@@ -178,6 +224,7 @@ func worker(cli *clientv3.Client, kvs []KV, putCount *int64, totalDuration *int6
 			log.Printf("Worker %d: Failed to update key %s: %v", workerID, kv.key, err)
 		} else {
 			kvs[idx].lastRevision = rev
+			revisionMap.Store(rev, time.Now())
 			atomic.AddInt64(putCount, 1)
 			atomic.AddInt64(totalDuration, duration.Nanoseconds())
 		}
