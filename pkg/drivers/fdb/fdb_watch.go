@@ -200,20 +200,15 @@ type afterCollector struct {
 	checkCompacted bool
 	minRevision    int64
 	takeKey        func(string) bool
+	fetchPrevGroup *errgroup.Group
+	fetchPrevCtx   context.Context
 	// output
-	batchEvents     []*server.Event
-	fetchPrevGroup  errgroup.Group
 	events          []*server.Event
+	batchEvents     []*server.Event
 	compactRevision int64
 	batchCompactRev int64
 	latestRev       int64
 	batchLatestRev  int64
-}
-
-type prevRevRequest struct {
-	tr    fdb.Transaction
-	rev   Revision
-	event *server.Event
 }
 
 func newAfterCollector(f *FDB, minRevision int64, checkCompacted bool, limit int, takeKey func(string) bool) *afterCollector {
@@ -221,6 +216,8 @@ func newAfterCollector(f *FDB, minRevision int64, checkCompacted bool, limit int
 	if capacity == 0 {
 		capacity = 100
 	}
+	g, ctx := errgroup.WithContext(f.ctx)
+	g.SetLimit(50)
 	return &afterCollector{
 		f:              f,
 		limit:          limit,
@@ -228,6 +225,8 @@ func newAfterCollector(f *FDB, minRevision int64, checkCompacted bool, limit int
 		takeKey:        takeKey,
 		minRevision:    minRevision,
 		checkCompacted: checkCompacted,
+		fetchPrevGroup: g,
+		fetchPrevCtx:   ctx,
 		batchEvents:    make([]*server.Event, 0, capacity),
 		events:         make([]*server.Event, 0, capacity),
 	}
@@ -269,7 +268,11 @@ func (c *afterCollector) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb.K
 		}
 	}
 
-	return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), c.needMore(), nil
+	if err := c.fetchPrevCtx.Err(); err != nil {
+		return nil, false, err
+	} else {
+		return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), c.needMore(), nil
+	}
 }
 
 func (c *afterCollector) needMore() bool {

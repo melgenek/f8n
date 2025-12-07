@@ -4,21 +4,31 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sync"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
+	"golang.org/x/sync/errgroup"
 )
 
 type compactProcessor struct {
-	f              *FDB
-	batchCompacted Revision
-	batchRev       Revision
-	rev            Revision
+	f    *FDB
+	g    *errgroup.Group
+	gCtx context.Context
+	// output
+	batchCompactedMutex sync.Mutex
+	batchCompacted      Revision
+	batchRev            Revision
+	rev                 Revision
 }
 
 func newCompactProcessor(f *FDB) *compactProcessor {
+	g, ctx := errgroup.WithContext(f.ctx)
+	g.SetLimit(50)
 	return &compactProcessor{
-		f: f,
+		f:    f,
+		g:    g,
+		gCtx: ctx,
 	}
 }
 
@@ -35,22 +45,34 @@ func (c *compactProcessor) next(tr *fdb.Transaction, it *fdb.RangeIterator) (fdb
 		return nil, false, nil
 	}
 
-	lastRecord, err := c.f.getLast(tr, record.Key, toSnapshot)
-	if err != nil {
-		return nil, false, err
-	}
-	if lastRecord == nil {
-		return nil, false, nil
-	}
-
-	if lastRecord.Key.Rev != *rev || record.IsDelete {
-		c.f.byKeyAndRevision.Delete(tr, &KeyAndRevision{Key: record.Key, Rev: *rev})
-		if err := c.f.byRevision.Delete(tr, *rev); err != nil {
-			return nil, false, err
+	c.g.Go(func() error {
+		lastRecord, err := c.f.getLast(tr, record.Key, toSnapshot)
+		if err != nil {
+			return err
 		}
+		if lastRecord == nil {
+			return nil
+		}
+
+		if lastRecord.Key.Rev != *rev || record.IsDelete {
+			c.f.byKeyAndRevision.Delete(tr, &KeyAndRevision{Key: record.Key, Rev: *rev})
+			if err := c.f.byRevision.Delete(tr, *rev); err != nil {
+				return err
+			}
+		}
+		c.batchCompactedMutex.Lock()
+		if c.batchCompacted < *rev {
+			c.batchCompacted = *rev
+		}
+		c.batchCompactedMutex.Unlock()
+		return nil
+	})
+
+	if err := c.gCtx.Err(); err != nil {
+		return nil, false, err
+	} else {
+		return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), true, nil
 	}
-	c.batchCompacted = *rev
-	return c.f.byRevision.GetSubspace().Pack(tuple.Tuple{*rev, math.MaxInt64}), true, nil
 }
 
 func (c *compactProcessor) endBatch(tr *fdb.Transaction, isLast bool) error {

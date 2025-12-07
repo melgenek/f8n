@@ -92,6 +92,9 @@ func main() {
 	var (
 		putCount      int64
 		totalDuration int64
+		watchTotalLag int64
+		watchCount    int64
+		watchLastRev  int64
 	)
 	revisionMap := &sync.Map{}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -106,25 +109,34 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				count := atomic.LoadInt64(&putCount)
-				duration := atomic.LoadInt64(&totalDuration)
+				pCount := atomic.SwapInt64(&putCount, 0)
+				pDuration := atomic.SwapInt64(&totalDuration, 0)
 
-				avgDuration := float64(0)
-				if count > 0 {
-					avgDuration = float64(duration) / float64(count)
+				avgPDuration := float64(0)
+				if pCount > 0 {
+					avgPDuration = float64(pDuration) / float64(pCount)
 				}
 
-				var lastRev int64
+				var lastPutRev int64
 				revisionMap.Range(func(key, value any) bool {
-					if key.(int64) > lastRev {
-						lastRev = key.(int64)
+					if key.(int64) > lastPutRev {
+						lastPutRev = key.(int64)
 					}
 					return true
 				})
-				fmt.Printf("Rev: %d. Puts/sec: %d. Avg duration: %.2fms\n", lastRev, count, avgDuration/1000000)
 
-				atomic.StoreInt64(&putCount, 0)
-				atomic.StoreInt64(&totalDuration, 0)
+				wCount := atomic.SwapInt64(&watchCount, 0)
+				wTotalLag := atomic.SwapInt64(&watchTotalLag, 0)
+				wLastRev := atomic.LoadInt64(&watchLastRev)
+
+				avgWLag := float64(0)
+				if wCount > 0 {
+					avgWLag = float64(wTotalLag) / float64(wCount)
+				}
+
+				log.Printf("Rev: %d. Puts/sec: %d. Avg duration: %.2fms. Watch rev: %d. Watch batch size: %d. Avg watch lag: %.2fms\n",
+					lastPutRev, pCount, avgPDuration/1000000,
+					wLastRev, wCount, avgWLag/1000000)
 			}
 		}
 	}()
@@ -159,14 +171,7 @@ func main() {
 
 	// Start watch goroutine
 	go func() {
-		var totalLag int64
-		var watchCount int64
-		var lastRev int64
 		watchCh := cli.Watch(ctx, "/", clientv3.WithPrefix(), clientv3.WithRev(1))
-
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-
 		for {
 			select {
 			case <-ctx.Done():
@@ -176,21 +181,13 @@ func main() {
 					if val, ok := revisionMap.LoadAndDelete(ev.Kv.ModRevision); ok {
 						writeTime := val.(time.Time)
 						lag := time.Since(writeTime)
-						totalLag += int64(lag)
-						watchCount += 1
+						atomic.AddInt64(&watchTotalLag, int64(lag))
+						atomic.AddInt64(&watchCount, 1)
 					}
 				}
 				if len(watchResp.Events) > 0 {
-					lastRev = watchResp.Events[0].Kv.ModRevision
+					atomic.StoreInt64(&watchLastRev, watchResp.Events[len(watchResp.Events)-1].Kv.ModRevision)
 				}
-			case <-ticker.C:
-				avgLag := float64(0)
-				if watchCount > 0 {
-					avgLag = float64(totalLag) / float64(watchCount)
-				}
-				fmt.Printf("Watch rev: %d. Count: %d. Avg watch lag: %.2fms\n", lastRev, watchCount, avgLag/1000000)
-				totalLag = 0
-				watchCount = 0
 			}
 		}
 	}()
